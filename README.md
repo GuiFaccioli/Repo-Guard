@@ -4,12 +4,12 @@ RepoGuard is an international portfolio project focused on basic GitHub reposito
 
 ## Current status
 - Agent instruction base is in place (`AGENTS.md` and `agents/`).
-- Initial frontend foundation is in place with React + Vite + React Router in `frontend/`.
-- The current deployed experience is GitHub-first onboarding:
-  - `/` focuses on "Continue with GitHub" entry
-  - `/auth/callback` is a clear OAuth placeholder
-  - `/repositories` is the future post-login dashboard foundation
-  - `/repositories/:id` is the future repository drill-down page
+- Frontend foundation is in place with React + Vite + React Router in `frontend/`.
+- The deployed experience is a compact GitHub-first onboarding flow:
+  - `/` is focused on "Continue with GitHub"
+  - `/auth/callback` is an explicit OAuth placeholder
+  - `/repositories` is a future authenticated dashboard placeholder
+  - `/repositories/:id` is a future repository detail placeholder
 - Placeholder routes are available for:
   - `/`
   - `/auth/callback`

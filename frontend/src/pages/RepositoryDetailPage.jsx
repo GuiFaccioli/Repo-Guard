@@ -3,9 +3,10 @@ import Button from '../components/Button'
 import Card from '../components/Card'
 
 const placeholderChecks = [
-  { name: 'README', status: 'ok' },
+  { name: 'README', status: 'pending' },
   { name: 'Dependabot', status: 'pending' },
-  { name: 'GitHub Actions', status: 'ok' },
+  { name: 'GitHub Actions', status: 'pending' },
+  { name: 'License', status: 'pending' },
 ]
 
 function RepositoryDetailPage() {
@@ -13,30 +14,39 @@ function RepositoryDetailPage() {
 
   return (
     <div className="page">
-      <h1>Repository details #{id}</h1>
+      <h1>Repository details placeholder #{id}</h1>
       <p className="page-description">
-        Future repository drill-down with full scan results, recommendation priority,
-        and health trend over time.
+        Future authenticated page for repository score details, failed checks, and
+        recommendation priorities.
       </p>
 
       <div className="repo-grid">
-        <Card title="Current score" subtitle="Placeholder">
-          <p className="score-value">78/100</p>
+        <Card title="Repository score" subtitle="Will load after first scan">
+          <p className="score-value">--</p>
         </Card>
 
-        <Card title="Latest scan" subtitle="Placeholder">
-          <ul className="check-list">
-            {placeholderChecks.map((check) => (
-              <li key={check.name}>
-                <span>{check.name}</span>
-                <span className="status-pill">{check.status}</span>
-              </li>
-            ))}
-          </ul>
+        <Card title="Last scan status" subtitle="No real data yet">
+          <p className="state-note">Waiting for authentication and backend scan flow.</p>
         </Card>
       </div>
 
-      <Button>Run scan (placeholder)</Button>
+      <Card title="Checks placeholder" subtitle="Expected scan output structure">
+        <ul className="check-list">
+          {placeholderChecks.map((check) => (
+            <li key={check.name}>
+              <span>{check.name}</span>
+              <span className="status-pill">{check.status}</span>
+            </li>
+          ))}
+        </ul>
+      </Card>
+
+      <div className="hero-actions">
+        <Button>Run scan (coming soon)</Button>
+        <Button to="/repositories" variant="secondary">
+          Back to dashboard placeholder
+        </Button>
+      </div>
     </div>
   )
 }

@@ -4,10 +4,10 @@ import Header from './Header'
 function AppLayout() {
   return (
     <div className="app-shell">
-      <Header />
-      <main className="app-main">
+      <div className="layout-frame">
+        <Header />
         <Outlet />
-      </main>
+      </div>
     </div>
   )
 }

@@ -1,9 +1,9 @@
 import { NavLink } from 'react-router-dom'
 
 const navItems = [
-  { to: '/', label: 'Home' },
+  { to: '/', label: 'Connect' },
   { to: '/repositories', label: 'Dashboard' },
-  { to: '/auth/callback', label: 'OAuth Placeholder' },
+  { to: '/auth/callback', label: 'OAuth Flow' },
 ]
 
 function Header() {
@@ -15,9 +15,11 @@ function Header() {
         </span>
         <div>
           <p className="brand-name">RepoGuard</p>
-          <p className="brand-tagline">Security and quality tracking</p>
+          <p className="brand-tagline">GitHub-first repository health tool</p>
         </div>
       </div>
+
+      <p className="header-status">Frontend foundation</p>
 
       <nav aria-label="Main navigation">
         <ul className="nav-list">

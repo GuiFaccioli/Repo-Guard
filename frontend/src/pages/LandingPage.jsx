@@ -2,72 +2,60 @@ import Button from '../components/Button'
 import Card from '../components/Card'
 
 const checks = [
-  'Repository health score',
-  'Security checks',
-  'Quality checks',
-  'Maintenance checks',
-  'Actionable recommendations',
-  'Scan history tracking',
+  'README',
+  'Dependabot',
+  'GitHub Actions',
+  'License',
+  'Last activity',
+  'Open issues / PRs',
 ]
 
 function LandingPage() {
   return (
-    <div className="page page-landing">
-      <section className="hero-section onboarding-hero">
+    <div className="page onboarding-page">
+      <Card className="connect-card">
         <p className="eyebrow">GitHub-first onboarding</p>
-        <h1>Continue with GitHub to start your repository health analysis</h1>
-        <p className="hero-description">
-          RepoGuard is designed to connect your GitHub account first, then move
-          directly into repository analysis for security, quality, and maintenance
-          signals.
+        <h1>Connect GitHub to start repository health analysis</h1>
+        <p className="page-description">
+          RepoGuard analyzes repositories for security, quality, and maintenance
+          signals, then organizes results into a clear health score and prioritized
+          recommendations.
         </p>
 
-        <Card title="GitHub identity preview" subtitle="UI concept only">
-          <div className="identity-preview">
-            <div className="identity-avatar" aria-hidden="true">
-              GH
-            </div>
-            <div>
-              <p className="identity-name">@your-github-user</p>
-              <p className="identity-meta">
-                Future backend-backed GitHub profile data will appear here.
-              </p>
-            </div>
+        <div className="connect-panel">
+          <div className="github-mark" aria-hidden="true">
+            GH
           </div>
-        </Card>
+          <div>
+            <p className="identity-name">GitHub connection required</p>
+            <p className="identity-meta">
+              Authentication flow is a placeholder in this stage. No real OAuth is
+              executed yet.
+            </p>
+          </div>
+        </div>
 
         <div className="hero-actions">
           <Button to="/auth/callback">Continue with GitHub</Button>
-          <Button to="/auth/callback" variant="secondary">
-            View OAuth placeholder
+          <Button to="/repositories" variant="secondary">
+            Preview dashboard
           </Button>
         </div>
-        <p className="hero-note">
-          Real GitHub OAuth is not implemented yet. This flow is currently a
-          frontend foundation and does not authenticate.
-        </p>
-      </section>
 
-      <section className="section">
-        <h2>What happens after GitHub connection</h2>
-        <div className="check-grid">
+        <ul className="trust-notes">
+          <li>GitHub tokens will never be exposed to the frontend.</li>
+          <li>Repository analysis starts after authentication.</li>
+        </ul>
+      </Card>
+
+      <Card title="Planned checks preview" subtitle="Initial repository signals">
+        <div className="checks-row">
           {checks.map((check) => (
-            <Card key={check}>
-              <p className="check-item">{check}</p>
-            </Card>
+            <span className="check-chip" key={check}>
+              {check}
+            </span>
           ))}
         </div>
-      </section>
-
-      <Card
-        title="Current stage"
-        subtitle="Frontend-only foundation for portfolio presentation"
-      >
-        <p>
-          The current deployment demonstrates onboarding and future dashboard flow.
-          Backend OAuth, GitHub API integration, and database persistence are planned
-          next.
-        </p>
       </Card>
     </div>
   )

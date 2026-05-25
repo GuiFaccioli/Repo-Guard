@@ -2,6 +2,9 @@
 
 This guide covers deployment of the RepoGuard React + Vite frontend only.
 
+## Production frontend URL
+- https://repo-guard-beta.vercel.app/
+
 ## Prerequisites
 - GitHub repository with `main` branch.
 - Project imported into Vercel.

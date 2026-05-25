@@ -29,6 +29,9 @@ When importing this repository into Vercel:
 - Build Command: `npm run build`
 - Output Directory: `dist`
 
+Production frontend URL:
+- https://repo-guard-beta.vercel.app/
+
 Expected frontend environment variables:
 - `VITE_API_URL`
 - `VITE_GA_MEASUREMENT_ID`

@@ -1,5 +1,6 @@
 import Button from '../components/Button'
 import Card from '../components/Card'
+import { buildBackendUrl, normalizeApiBaseUrl } from '../utils/apiUrl'
 
 const checks = [
   'README',
@@ -11,10 +12,9 @@ const checks = [
 ]
 
 function LandingPage() {
-  const apiBaseUrl = import.meta.env.VITE_API_URL?.trim()
-  const oauthStartUrl = apiBaseUrl
-    ? `${apiBaseUrl.replace(/\/$/, '')}/auth/github/start`
-    : null
+  const rawApiBaseUrl = import.meta.env.VITE_API_URL
+  const apiBaseUrl = normalizeApiBaseUrl(rawApiBaseUrl)
+  const oauthStartUrl = buildBackendUrl(rawApiBaseUrl, '/auth/github/start')
 
   return (
     <div className="page onboarding-page">
@@ -34,24 +34,26 @@ function LandingPage() {
           <div>
             <p className="identity-name">GitHub connection required</p>
             <p className="identity-meta">
-              Authentication flow is a placeholder in this stage. No real OAuth is
-              executed yet.
+              RepoGuard starts GitHub OAuth through the configured backend API.
             </p>
           </div>
         </div>
 
         <div className="hero-actions">
-          {oauthStartUrl ? (
+          {oauthStartUrl && apiBaseUrl ? (
             <Button href={oauthStartUrl}>Continue with GitHub</Button>
           ) : (
-            <Button disabled>
-              Continue with GitHub (set VITE_API_URL)
-            </Button>
+            <Button disabled>Continue with GitHub</Button>
           )}
           <Button to="/repositories" variant="secondary">
             Preview dashboard
           </Button>
         </div>
+        {!oauthStartUrl || !apiBaseUrl ? (
+          <p className="state-note state-note-danger">
+            Backend API URL is not configured for this environment.
+          </p>
+        ) : null}
 
         <ul className="trust-notes">
           <li>GitHub tokens will never be exposed to the frontend.</li>

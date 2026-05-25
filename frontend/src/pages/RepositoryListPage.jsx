@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Button from '../components/Button'
 import Card from '../components/Card'
+import { buildBackendUrl, normalizeApiBaseUrl } from '../utils/apiUrl'
 
 const initialAuthState = {
   status: 'loading',
@@ -73,13 +74,17 @@ function getScanTypeLabel(scanType) {
 }
 
 function RepositoryListPage() {
-  const apiBaseUrl = import.meta.env.VITE_API_URL?.trim()
+  const rawApiBaseUrl = import.meta.env.VITE_API_URL
+  const apiBaseUrl = useMemo(
+    () => normalizeApiBaseUrl(rawApiBaseUrl),
+    [rawApiBaseUrl],
+  )
   const authMeUrl = useMemo(() => {
     if (!apiBaseUrl) {
       return null
     }
 
-    return `${apiBaseUrl.replace(/\/$/, '')}/auth/me`
+    return buildBackendUrl(apiBaseUrl, '/auth/me')
   }, [apiBaseUrl])
 
   const repositoriesUrl = useMemo(() => {
@@ -87,7 +92,7 @@ function RepositoryListPage() {
       return null
     }
 
-    return `${apiBaseUrl.replace(/\/$/, '')}/repositories`
+    return buildBackendUrl(apiBaseUrl, '/repositories')
   }, [apiBaseUrl])
 
   const [authState, setAuthState] = useState(initialAuthState)
@@ -163,7 +168,7 @@ function RepositoryListPage() {
       setRepositoriesState({
         status: 'error',
         repositories: [],
-        error: 'Missing VITE_API_URL. Configure frontend/.env and reload.',
+        error: 'Backend API URL is not configured for this environment.',
       })
       return
     }
@@ -234,7 +239,7 @@ function RepositoryListPage() {
           [repositoryId]: {
             status: 'error',
             result: null,
-            error: 'Missing VITE_API_URL. Configure frontend/.env and reload.',
+            error: 'Backend API URL is not configured for this environment.',
           },
         }))
         return
@@ -390,9 +395,9 @@ function RepositoryListPage() {
       ) : null}
 
       {isMissingConfig ? (
-        <Card title="Missing API configuration" subtitle="Set VITE_API_URL in frontend/.env">
+        <Card title="Missing API configuration" subtitle="Set a valid VITE_API_URL for this environment">
           <p className="state-note">
-            The frontend cannot check authentication without the backend URL.
+            Backend API URL is not configured for this environment.
           </p>
           <div className="hero-actions">
             <Button to="/" variant="secondary">

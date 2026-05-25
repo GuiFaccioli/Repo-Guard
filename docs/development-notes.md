@@ -24,6 +24,9 @@ Required frontend variables:
 - `VITE_API_URL=http://localhost:3001`
 - `VITE_GA_MEASUREMENT_ID` (optional for now)
 
+`VITE_API_URL` must be an absolute backend URL (`http://` or `https://`).
+Relative values, empty values, or placeholder values are treated as invalid by the frontend OAuth entry flow.
+
 Security warning:
 - Never commit `.env` files.
 - Never commit tokens, secrets, private keys, or real credentials.
@@ -74,6 +77,14 @@ When importing into Vercel:
 - Framework Preset: `Vite`
 - Build Command: `npm run build`
 - Output Directory: `dist`
+
+Required production environment variable:
+- `VITE_API_URL=https://<your-backend-domain>`
+
+Important:
+- The frontend deployment alone cannot complete GitHub OAuth.
+- `VITE_API_URL` in Vercel must point to the deployed backend domain that serves `/auth/github/start`.
+- Do not use relative values such as `/x1x2x3x4` or placeholder values.
 
 Production URL:
 - https://repo-guard-beta.vercel.app/

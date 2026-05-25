@@ -3,16 +3,26 @@ import { Link } from 'react-router-dom'
 function Button({
   children,
   to,
+  href,
   type = 'button',
   variant = 'primary',
   onClick,
   className = '',
+  disabled = false,
 }) {
   const buttonClass =
     variant === 'secondary' ? 'button button-secondary' : 'button button-primary'
-  const mergedClassName = `${buttonClass} ${className}`.trim()
+  const mergedClassName = `${buttonClass} ${className} ${disabled ? 'button-disabled' : ''}`.trim()
 
-  if (to) {
+  if (href && !disabled) {
+    return (
+      <a href={href} className={mergedClassName}>
+        {children}
+      </a>
+    )
+  }
+
+  if (to && !disabled) {
     return (
       <Link to={to} className={mergedClassName}>
         {children}
@@ -21,7 +31,7 @@ function Button({
   }
 
   return (
-    <button type={type} className={mergedClassName} onClick={onClick}>
+    <button type={type} className={mergedClassName} onClick={onClick} disabled={disabled}>
       {children}
     </button>
   )

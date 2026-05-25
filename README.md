@@ -5,17 +5,18 @@ RepoGuard is an international portfolio project focused on basic GitHub reposito
 ## Current status
 - Agent instruction base is in place (`AGENTS.md` and `agents/`).
 - Frontend foundation is in place with React + Vite + React Router in `frontend/`.
-- The deployed experience is a compact GitHub-first onboarding flow:
-  - `/` is focused on "Continue with GitHub"
-  - `/auth/callback` is an explicit OAuth placeholder
-  - `/repositories` is a future authenticated dashboard placeholder
-  - `/repositories/:id` is a future repository detail placeholder
-- Placeholder routes are available for:
+- Backend foundation is now in place with NestJS in `backend/`.
+- GitHub-first flow is wired as:
+  - frontend `/` -> backend `/auth/github/start` (when `VITE_API_URL` is set)
+  - backend redirects to GitHub authorization
+  - GitHub callback returns to backend `/auth/github/callback`
+  - backend validates state, creates session, and redirects to frontend `/repositories`
+- Placeholder frontend routes remain:
   - `/`
   - `/auth/callback`
   - `/repositories`
   - `/repositories/:id`
-- Real OAuth, backend, GitHub API integration, and database features are not implemented yet.
+- Repository scanning, Prisma, and PostgreSQL are not implemented yet.
 
 ## Run frontend locally
 1. Enter the frontend directory:
@@ -26,6 +27,26 @@ RepoGuard is an international portfolio project focused on basic GitHub reposito
    - `npm run dev`
 4. Build for production:
    - `npm run build`
+
+## Run backend locally
+1. Enter the backend directory:
+   - `cd backend`
+2. Install dependencies:
+   - `npm install`
+3. Create local env file from example:
+   - copy `backend/.env.example` to `backend/.env`
+4. Start development server:
+   - `npm run start:dev`
+
+Backend default URL:
+- `http://localhost:3001`
+
+Required backend routes:
+- `GET /health`
+- `GET /auth/github/start`
+- `GET /auth/github/callback`
+- `GET /auth/me`
+- `POST /auth/logout`
 
 ## Quick Vercel deployment
 When importing this repository into Vercel:
@@ -44,8 +65,18 @@ Expected frontend environment variables:
 Template file:
 - `frontend/.env.example`
 
+For local OAuth testing, set:
+- `VITE_API_URL=http://localhost:3001`
+
+## OAuth security notes
+- GitHub client secret stays on backend only.
+- GitHub access token is never returned to the frontend.
+- Session cookie is `httpOnly`.
+- OAuth state is validated to protect against CSRF.
+- Do not commit real `.env` files.
+
 ## Next steps
-1. Implement backend-backed GitHub OAuth with NestJS.
-2. Fetch authenticated GitHub profile (avatar/name) after connection.
-3. Integrate repository analysis data in the dashboard and detail pages.
-4. Persist scan history in PostgreSQL with Prisma.
+1. Persist authenticated users and OAuth metadata with Prisma/PostgreSQL.
+2. Implement repository fetch and dashboard data from GitHub API.
+3. Add scan execution and result persistence.
+4. Add GA4/Measurement Protocol events after auth and scan actions.

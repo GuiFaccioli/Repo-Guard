@@ -269,6 +269,13 @@ a {
   background: rgba(56, 80, 110, 0.22);
 }
 
+.button-disabled,
+.button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
 .trust-notes {
   margin: 0.95rem 0 0;
   padding-left: 1.1rem;

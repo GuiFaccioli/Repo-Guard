@@ -11,6 +11,11 @@ const checks = [
 ]
 
 function LandingPage() {
+  const apiBaseUrl = import.meta.env.VITE_API_URL?.trim()
+  const oauthStartUrl = apiBaseUrl
+    ? `${apiBaseUrl.replace(/\/$/, '')}/auth/github/start`
+    : null
+
   return (
     <div className="page onboarding-page">
       <Card className="connect-card">
@@ -36,7 +41,13 @@ function LandingPage() {
         </div>
 
         <div className="hero-actions">
-          <Button to="/auth/callback">Continue with GitHub</Button>
+          {oauthStartUrl ? (
+            <Button href={oauthStartUrl}>Continue with GitHub</Button>
+          ) : (
+            <Button disabled>
+              Continue with GitHub (set VITE_API_URL)
+            </Button>
+          )}
           <Button to="/repositories" variant="secondary">
             Preview dashboard
           </Button>

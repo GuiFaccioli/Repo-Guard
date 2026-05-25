@@ -13,6 +13,7 @@ Create local files from examples:
 - `frontend/.env` from `frontend/.env.example`
 
 Required backend variables:
+- `NODE_ENV=development`
 - `PORT=3001`
 - `FRONTEND_URL=http://localhost:5173`
 - `GITHUB_CLIENT_ID`
@@ -92,3 +93,4 @@ Production URL:
 ## Related Docs
 - OAuth setup and security notes: [github-oauth.md](github-oauth.md)
 - Frontend deployment details: [deploy-vercel.md](deploy-vercel.md)
+- Backend production deployment checklist: [backend-deploy.md](backend-deploy.md)

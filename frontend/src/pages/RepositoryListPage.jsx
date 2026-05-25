@@ -42,6 +42,8 @@ const scanModes = [
   },
 ]
 
+const scanModeDictionary = Object.fromEntries(scanModes.map((item) => [item.key, item]))
+
 function formatDate(value) {
   if (!value) {
     return 'Unknown'
@@ -73,6 +75,19 @@ function getScanTypeLabel(scanType) {
   return 'Scan'
 }
 
+function getScanStateLabel(scanState) {
+  if (scanState?.status === 'loading') {
+    return 'Running'
+  }
+  if (scanState?.status === 'success' && scanState?.result) {
+    return `${scanState.result.score}`
+  }
+  if (scanState?.status === 'error') {
+    return 'Error'
+  }
+  return 'Not started'
+}
+
 function RepositoryListPage() {
   const rawApiBaseUrl = import.meta.env.VITE_API_URL
   const apiBaseUrl = useMemo(
@@ -99,10 +114,14 @@ function RepositoryListPage() {
   const [repositoriesState, setRepositoriesState] = useState(initialRepositoriesState)
   const [scanStates, setScanStates] = useState({})
   const [selectedScanType, setSelectedScanType] = useState('green')
+  const [activeResultRepositoryId, setActiveResultRepositoryId] = useState(null)
+  const [lastCompletedScan, setLastCompletedScan] = useState(null)
 
   const resetRepositoryData = useCallback(() => {
     setRepositoriesState(initialRepositoriesState)
     setScanStates({})
+    setActiveResultRepositoryId(null)
+    setLastCompletedScan(null)
   }, [])
 
   const loadSession = useCallback(async () => {
@@ -245,6 +264,7 @@ function RepositoryListPage() {
         return
       }
 
+      setActiveResultRepositoryId(repositoryId)
       setScanStates((current) => ({
         ...current,
         [repositoryId]: {
@@ -294,6 +314,10 @@ function RepositoryListPage() {
             error: '',
           },
         }))
+        setLastCompletedScan({
+          repositoryId,
+          completedAt: new Date().toISOString(),
+        })
       } catch (error) {
         setScanStates((current) => ({
           ...current,
@@ -335,95 +359,100 @@ function RepositoryListPage() {
   const repositoriesEmpty = repositoriesState.status === 'empty'
   const repositoriesError = repositoriesState.status === 'error'
 
-  const repositoryCount = repositoriesLoaded ? repositoriesState.repositories.length : 0
+  const repositories = repositoriesLoaded ? repositoriesState.repositories : []
+  const repositoryCount = repositories.length
 
-  const metricCards = isAuthenticated
-    ? [
-        {
-          label: 'Total repositories',
-          value: repositoryCount,
-          helper: 'Public repositories available for scan',
-        },
-        {
-          label: 'Average score',
-          value: '--',
-          helper: 'Appears after running scans',
-        },
-        {
-          label: 'High-risk repositories',
-          value: '--',
-          helper: 'Calculated from scan severity',
-        },
-        {
-          label: 'Last scan',
-          value: 'Run a scan',
-          helper: 'Select a repository and run the first health scan',
-        },
-      ]
-    : [
-        { label: 'Total repositories', value: '--', helper: 'Connect GitHub first' },
-        { label: 'Average score', value: '--', helper: 'Available after scan' },
-        { label: 'High-risk repositories', value: '--', helper: 'Available after scan' },
-        { label: 'Last scan', value: 'Not started', helper: 'Waiting for authentication' },
-      ]
+  const scannedResults = repositories.flatMap((repository) => {
+    const scanState = scanStates[repository.id]
+    if (scanState?.status === 'success' && scanState.result) {
+      return [{ repository, result: scanState.result }]
+    }
+    return []
+  })
+
+  const averageScore = scannedResults.length
+    ? Math.round(
+        scannedResults.reduce((sum, item) => sum + item.result.score, 0) /
+          scannedResults.length,
+      )
+    : '--'
+  const highRiskCount = scannedResults.filter(
+    (item) => item.result.summary.highestSeverity === 'high',
+  ).length
+  const scannedCount = scannedResults.length
+
+  const lastScanLabel = lastCompletedScan
+    ? (() => {
+        const repository = repositories.find(
+          (item) => item.id === lastCompletedScan.repositoryId,
+        )
+        if (!repository) {
+          return 'Recently completed'
+        }
+        return `${repository.name} · ${formatDate(lastCompletedScan.completedAt)}`
+      })()
+    : 'No scan completed'
 
   const displayName =
     isAuthenticated && authState.user.name?.trim()
       ? authState.user.name
       : isAuthenticated
         ? authState.user.login
-        : ''
+        : 'GitHub user'
 
   const profileUrl = isAuthenticated
     ? authState.user.htmlUrl || `https://github.com/${authState.user.login}`
     : ''
 
+  const activeResultState = activeResultRepositoryId
+    ? scanStates[activeResultRepositoryId]
+    : null
+
+  const activeRepository = activeResultRepositoryId
+    ? repositories.find((repository) => repository.id === activeResultRepositoryId) || null
+    : null
+
+  const selectedScanMode = scanModeDictionary[selectedScanType]
+
+  const metricCards = [
+    {
+      label: 'Total repositories',
+      value: isAuthenticated ? repositoryCount : '--',
+      helper: 'Public repositories available for analysis',
+    },
+    {
+      label: 'Average score',
+      value: isAuthenticated ? averageScore : '--',
+      helper: scannedCount ? 'Based on completed scans' : 'Appears after scans',
+    },
+    {
+      label: 'High-risk repositories',
+      value: isAuthenticated ? highRiskCount : '--',
+      helper: scannedCount
+        ? 'Highest severity marked as high'
+        : 'Calculated after completed scans',
+    },
+    {
+      label: 'Last scan',
+      value: isAuthenticated ? (scannedCount ? 'Completed' : 'Pending') : '--',
+      helper: isAuthenticated ? lastScanLabel : 'Connect GitHub first',
+    },
+  ]
+
   return (
-    <div className="page dashboard-page">
-      <h1>Repository analysis dashboard</h1>
-      <p className="page-description">
-        RepoGuard validates your GitHub session, lists your public repositories, and
-        runs live health scans for security, quality, and maintenance signals.
-      </p>
-
-      {isLoadingSession ? (
-        <Card title="Checking GitHub session" subtitle="Contacting backend /auth/me">
-          <p className="state-note">
-            Verifying authentication before loading your repository dashboard...
+    <div className="page dashboard-page workspace-dashboard-page">
+      <section className="workspace-topbar">
+        <div>
+          <p className="eyebrow">GitHub repository workspace</p>
+          <h1>Repository analysis dashboard</h1>
+          <p className="page-description">
+            Desktop-first workspace for repository health checks, maintainability
+            signals, and defensive security pattern review.
           </p>
-        </Card>
-      ) : null}
+        </div>
 
-      {isMissingConfig ? (
-        <Card title="Missing API configuration" subtitle="Set a valid VITE_API_URL for this environment">
-          <p className="state-note">
-            Backend API URL is not configured for this environment.
-          </p>
-          <div className="hero-actions">
-            <Button to="/" variant="secondary">
-              Back to connect screen
-            </Button>
-          </div>
-        </Card>
-      ) : null}
-
-      {hasSessionError ? (
-        <Card title="Could not validate session" subtitle="Backend request failed">
-          <p className="state-note state-note-danger">{authState.error}</p>
-          <div className="hero-actions">
-            <Button type="button" onClick={() => void loadSession()} variant="secondary">
-              Retry session check
-            </Button>
-            <Button to="/" variant="secondary">
-              Back to connect screen
-            </Button>
-          </div>
-        </Card>
-      ) : null}
-
-      {isAuthenticated ? (
-        <Card title="Connected to GitHub" subtitle="Session authenticated">
-          <div className="identity-preview">
+        {isAuthenticated ? (
+          <div className="workspace-topbar-user">
             <img
               className="identity-avatar-image"
               src={authState.user.avatarUrl}
@@ -433,216 +462,339 @@ function RepositoryListPage() {
             <div>
               <p className="identity-name">{displayName}</p>
               <p className="identity-meta">@{authState.user.login}</p>
-              <a
-                className="profile-link"
-                href={profileUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
+              <a className="profile-link" href={profileUrl} target="_blank" rel="noreferrer">
                 View GitHub profile
               </a>
             </div>
-            <span className="connection-badge">Connected to GitHub</span>
+            <span className="connection-badge">Connected</span>
           </div>
+        ) : (
+          <div className="workspace-topbar-user">
+            <div className="github-mark" aria-hidden="true">
+              GH
+            </div>
+            <div>
+              <p className="identity-name">GitHub connection required</p>
+              <p className="identity-meta">
+                Authenticate first to load repositories and run scans.
+              </p>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="workspace-controls">
+        <Button type="button" onClick={() => void loadSession()} variant="secondary">
+          Refresh session
+        </Button>
+        <Button
+          type="button"
+          onClick={() => void loadRepositories()}
+          variant="secondary"
+          disabled={!isAuthenticated || isLoadingRepositories}
+        >
+          {isLoadingRepositories ? 'Refreshing...' : 'Refresh repositories'}
+        </Button>
+        <Button to="/" variant="secondary">
+          Back to connect
+        </Button>
+      </section>
+
+      {isLoadingSession ? (
+        <Card title="Checking GitHub session" subtitle="Contacting backend /auth/me">
+          <p className="state-note">
+            Verifying authentication before loading your repository workspace...
+          </p>
+        </Card>
+      ) : null}
+
+      {isMissingConfig ? (
+        <Card
+          title="Missing API configuration"
+          subtitle="Set a valid VITE_API_URL for this environment"
+        >
+          <p className="state-note">
+            Backend API URL is not configured for this environment.
+          </p>
+        </Card>
+      ) : null}
+
+      {hasSessionError ? (
+        <Card title="Could not validate session" subtitle="Backend request failed">
+          <p className="state-note state-note-danger">{authState.error}</p>
         </Card>
       ) : null}
 
       {isUnauthenticated ? (
         <Card title="Not connected to GitHub" subtitle="Authentication required">
           <p className="state-note">
-            Your current session is not authenticated. Connect your GitHub account to
-            continue.
+            Your current session is not authenticated. Return to the connect screen
+            and continue with GitHub.
           </p>
-          <div className="hero-actions">
-            <Button to="/">Go to GitHub connection</Button>
-          </div>
         </Card>
       ) : null}
 
-      <section className="metric-grid" aria-label="Repository health overview">
-        {metricCards.map((item) => (
-          <Card key={item.label} className="metric-card">
-            <p className="metric-label">{item.label}</p>
-            <p className="metric-value">{item.value}</p>
-            <p className="metric-helper">{item.helper}</p>
-          </Card>
-        ))}
-      </section>
-
-      <Card title="Choose scan mode" subtitle="Select one scan type before running">
-        <div className="scan-mode-grid">
-          {scanModes.map((mode) => (
-            <button
-              key={mode.key}
-              type="button"
-              className={`scan-mode-card ${mode.toneClass} ${selectedScanType === mode.key ? 'scan-mode-card-active' : ''}`.trim()}
-              onClick={() => setSelectedScanType(mode.key)}
-            >
-              <p className="scan-mode-title">{mode.title}</p>
-              <p className="scan-mode-subtitle">{mode.subtitle}</p>
-              <p className="scan-mode-description">{mode.description}</p>
-            </button>
-          ))}
-        </div>
-      </Card>
-
-      <Card
-        title="Your GitHub public repositories"
-        subtitle="Run a live scan to generate score, checks, and recommendations"
-      >
-        {isLoadingRepositories ? (
-          <p className="state-note">Loading repositories from GitHub...</p>
-        ) : null}
-
-        {repositoriesError ? (
-          <>
-            <p className="state-note state-note-danger">{repositoriesState.error}</p>
-            <div className="hero-actions">
-              <Button type="button" onClick={() => void loadRepositories()} variant="secondary">
-                Retry repository load
-              </Button>
+      <section className="dashboard-workspace" aria-label="Repository analysis workspace">
+        <aside className="dashboard-left-panel">
+          <Card
+            title="Scan modes"
+            subtitle="Select the scan depth before running repository analysis"
+          >
+            <div className="scan-mode-stack">
+              {scanModes.map((mode) => (
+                <button
+                  key={mode.key}
+                  type="button"
+                  className={`scan-mode-card ${mode.toneClass} ${selectedScanType === mode.key ? 'scan-mode-card-active' : ''}`.trim()}
+                  onClick={() => setSelectedScanType(mode.key)}
+                >
+                  <p className="scan-mode-title">{mode.title}</p>
+                  <p className="scan-mode-subtitle">{mode.subtitle}</p>
+                  <p className="scan-mode-description">{mode.description}</p>
+                </button>
+              ))}
             </div>
-          </>
-        ) : null}
+          </Card>
 
-        {repositoriesEmpty ? (
-          <p className="state-note">
-            No public repositories were returned for this account.
-          </p>
-        ) : null}
+          <Card title="Selected scan" subtitle="Current mode for run action">
+            <p className="scan-mode-title">{selectedScanMode.title}</p>
+            <p className="scan-mode-description">{selectedScanMode.description}</p>
+          </Card>
+        </aside>
 
-        {repositoriesLoaded ? (
-          <ul className="repository-list">
-            {repositoriesState.repositories.map((repository) => {
-              const scanState = scanStates[repository.id] || {
-                status: 'idle',
-                result: null,
-                error: '',
-              }
+        <main className="dashboard-main-panel">
+          <section className="metric-grid" aria-label="Repository health overview">
+            {metricCards.map((item) => (
+              <Card key={item.label} className="metric-card">
+                <p className="metric-label">{item.label}</p>
+                <p className="metric-value">{item.value}</p>
+                <p className="metric-helper">{item.helper}</p>
+              </Card>
+            ))}
+          </section>
 
-              return (
-                <li key={repository.id} className="repository-item">
-                  <div className="repository-head">
-                    <div>
-                      <p className="repository-name">{repository.fullName}</p>
-                      <p className="repository-description">
-                        {repository.description || 'No description provided.'}
-                      </p>
-                    </div>
-                    <span className="status-pill">
-                      {repository.private ? 'private' : 'public'}
-                    </span>
-                  </div>
+          <Card
+            title="Your GitHub public repositories"
+            subtitle="Run Green, Yellow, or Red scans for each repository"
+          >
+            {isLoadingRepositories ? (
+              <p className="state-note">Loading repositories from GitHub...</p>
+            ) : null}
 
-                  <div className="repository-meta">
-                    <span>Language: {repository.language || 'Not specified'}</span>
-                    <span>Stars: {repository.stars}</span>
-                    <span>Forks: {repository.forks}</span>
-                    <span>Open issues: {repository.openIssues}</span>
-                    <span>Last push: {formatDate(repository.pushedAt)}</span>
-                  </div>
+            {repositoriesError ? (
+              <p className="state-note state-note-danger">{repositoriesState.error}</p>
+            ) : null}
 
-                  <div className="repository-actions">
-                    <a href={repository.htmlUrl} target="_blank" rel="noreferrer">
-                      Open on GitHub
-                    </a>
-                    <Button
-                      type="button"
-                      onClick={() => void runScan(repository.id, selectedScanType)}
-                      disabled={scanState.status === 'loading'}
+            {repositoriesEmpty ? (
+              <p className="state-note">
+                No public repositories were returned for this account.
+              </p>
+            ) : null}
+
+            {repositoriesLoaded ? (
+              <div className="repository-table-wrap">
+                <table className="repository-table">
+                  <thead>
+                    <tr>
+                      <th>Repository</th>
+                      <th>Language</th>
+                      <th>Visibility</th>
+                      <th>Open issues</th>
+                      <th>Last push</th>
+                      <th>Scan score</th>
+                      <th>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {repositories.map((repository) => {
+                      const scanState = scanStates[repository.id] || {
+                        status: 'idle',
+                        result: null,
+                        error: '',
+                      }
+
+                      const hasResult =
+                        scanState.status === 'success' && scanState.result
+                      const rowIsActive = activeResultRepositoryId === repository.id
+
+                      return (
+                        <tr
+                          key={repository.id}
+                          className={rowIsActive ? 'repository-row-active' : ''}
+                        >
+                          <td>
+                            <div className="repo-name-cell">
+                              <p className="repository-name">{repository.fullName}</p>
+                              <p className="repository-description">
+                                {repository.description || 'No description provided.'}
+                              </p>
+                              <a
+                                href={repository.htmlUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="repository-link"
+                              >
+                                Open on GitHub
+                              </a>
+                            </div>
+                          </td>
+                          <td>{repository.language || 'Not specified'}</td>
+                          <td>
+                            <span className="status-pill">
+                              {repository.private ? 'private' : 'public'}
+                            </span>
+                          </td>
+                          <td>{repository.openIssues}</td>
+                          <td>{formatDate(repository.pushedAt)}</td>
+                          <td>
+                            <span
+                              className={
+                                hasResult
+                                  ? getSeverityBadgeClass(
+                                      scanState.result.summary.highestSeverity,
+                                    )
+                                  : 'severity-pill'
+                              }
+                            >
+                              {getScanStateLabel(scanState)}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="repository-actions">
+                              <Button
+                                type="button"
+                                onClick={() =>
+                                  void runScan(repository.id, selectedScanType)
+                                }
+                                disabled={scanState.status === 'loading'}
+                              >
+                                {scanState.status === 'loading'
+                                  ? 'Running...'
+                                  : `Run ${getScanTypeLabel(selectedScanType)}`}
+                              </Button>
+
+                              {hasResult ? (
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  onClick={() =>
+                                    setActiveResultRepositoryId(repository.id)
+                                  }
+                                >
+                                  View result
+                                </Button>
+                              ) : null}
+                            </div>
+
+                            {scanState.status === 'error' ? (
+                              <p className="scan-row-error">{scanState.error}</p>
+                            ) : null}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </Card>
+        </main>
+
+        <aside className="dashboard-right-panel">
+          <Card title="Scan result panel" subtitle="Structured output for selected repository">
+            {!activeResultState || activeResultState.status === 'idle' ? (
+              <p className="state-note">
+                Select a repository scan result to inspect score, checks, and
+                recommendations.
+              </p>
+            ) : null}
+
+            {activeResultState?.status === 'loading' ? (
+              <p className="state-note">Running selected repository scan...</p>
+            ) : null}
+
+            {activeResultState?.status === 'error' ? (
+              <p className="state-note state-note-danger">{activeResultState.error}</p>
+            ) : null}
+
+            {activeResultState?.status === 'success' &&
+            activeResultState.result &&
+            activeRepository ? (
+              <div className="scan-result-panel">
+                <div className="scan-summary">
+                  <p className="scan-score">Score: {activeResultState.result.score}</p>
+                  <p className="scan-meta">Repository: {activeRepository.fullName}</p>
+                  <p className="scan-meta">
+                    Scan type: {getScanTypeLabel(activeResultState.result.scanType)}
+                  </p>
+                  <p className="scan-meta">
+                    Passed: {activeResultState.result.summary.passed} | Failed:{' '}
+                    {activeResultState.result.summary.failed}
+                  </p>
+                  <p className="scan-meta">
+                    Highest severity:{' '}
+                    <span
+                      className={getSeverityBadgeClass(
+                        activeResultState.result.summary.highestSeverity,
+                      )}
                     >
-                      {scanState.status === 'loading'
-                        ? 'Running scan...'
-                        : `Run ${getScanTypeLabel(selectedScanType)}`}
-                    </Button>
+                      {activeResultState.result.summary.highestSeverity}
+                    </span>
+                  </p>
+                </div>
+
+                <div className="scan-grid">
+                  <div>
+                    <p className="scan-section-title">Checks</p>
+                    <ul className="scan-check-list">
+                      {activeResultState.result.checks.map((check) => (
+                        <li key={check.key}>
+                          <div className="scan-check-line">
+                            <span>{check.label}</span>
+                            <span className={check.passed ? 'status-ok' : 'status-failed'}>
+                              {check.passed ? 'pass' : 'fail'}
+                            </span>
+                          </div>
+                          <p className="scan-check-message">
+                            {check.message}{' '}
+                            <span className="scan-category">{check.category}</span>{' '}
+                            <span className={getSeverityBadgeClass(check.severity)}>
+                              {check.severity}
+                            </span>
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
 
-                  {scanState.status === 'error' ? (
-                    <p className="state-note state-note-danger">{scanState.error}</p>
-                  ) : null}
-
-                  {scanState.status === 'success' && scanState.result ? (
-                    <div className="scan-result">
-                      <div className="scan-summary">
-                        <p className="scan-score">Score: {scanState.result.score}</p>
-                        <p className="scan-meta">
-                          Scan type: {getScanTypeLabel(scanState.result.scanType)}
-                        </p>
-                        <p className="scan-meta">
-                          Passed: {scanState.result.summary.passed} | Failed:{' '}
-                          {scanState.result.summary.failed}
-                        </p>
-                        <p className="scan-meta">
-                          Highest severity:{' '}
-                          <span
-                            className={getSeverityBadgeClass(
-                              scanState.result.summary.highestSeverity,
-                            )}
-                          >
-                            {scanState.result.summary.highestSeverity}
-                          </span>
-                        </p>
-                      </div>
-
-                      <div className="scan-grid">
-                        <div>
-                          <p className="scan-section-title">Checks</p>
-                          <ul className="scan-check-list">
-                            {scanState.result.checks.map((check) => (
-                              <li key={check.key}>
-                                <div className="scan-check-line">
-                                  <span>{check.label}</span>
-                                  <span
-                                    className={
-                                      check.passed ? 'status-ok' : 'status-failed'
-                                    }
-                                  >
-                                    {check.passed ? 'pass' : 'fail'}
-                                  </span>
-                                </div>
-                                <p className="scan-check-message">
-                                  {check.message}{' '}
-                                  <span className="scan-category">{check.category}</span>{' '}
-                                  <span className={getSeverityBadgeClass(check.severity)}>
-                                    {check.severity}
-                                  </span>
-                                </p>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-
-                        <div>
-                          <p className="scan-section-title">Recommendations</p>
-                          {scanState.result.recommendations.length ? (
-                            <ul className="scan-recommendations">
-                              {scanState.result.recommendations.map((item, index) => (
-                                <li key={`${item.title}-${index}`}>
-                                  <p className="scan-recommendation-title">
-                                    <span className={getSeverityBadgeClass(item.priority)}>
-                                      {item.priority}
-                                    </span>{' '}
-                                    {item.title}
-                                  </p>
-                                  <p className="scan-check-message">{item.description}</p>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="scan-check-message">
-                              No recommendations. This repository passed all current checks.
+                  <div>
+                    <p className="scan-section-title">Recommendations</p>
+                    {activeResultState.result.recommendations.length ? (
+                      <ul className="scan-recommendations">
+                        {activeResultState.result.recommendations.map((item, index) => (
+                          <li key={`${item.title}-${index}`}>
+                            <p className="scan-recommendation-title">
+                              <span className={getSeverityBadgeClass(item.priority)}>
+                                {item.priority}
+                              </span>{' '}
+                              {item.title}
                             </p>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-                </li>
-              )
-            })}
-          </ul>
-        ) : null}
-      </Card>
+                            <p className="scan-check-message">{item.description}</p>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="scan-check-message">
+                        No recommendations. This repository passed all current checks.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </Card>
+        </aside>
+      </section>
     </div>
   )
 }

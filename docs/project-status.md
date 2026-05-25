@@ -29,10 +29,15 @@ This document tracks implementation progress, current milestone focus, and the n
   - weighted checks for security, quality, and maintenance signals
   - score calculation (0-100), severity summary, and recommendations
   - frontend "Run scan" action with loading/error/result states per repository
+- Scan mode selection implemented:
+  - `green` scan for basic repository hygiene
+  - `yellow` scan for maintainability and project quality signals
+  - `red` scan for defensive security pattern detection
+  - red scan reports potential risks only (no exploitation behavior)
 - Frontend deployed to Vercel with monorepo settings using `frontend/` as root directory.
 
 ## Current Milestone
-Live repository scan execution and preparation for scan history persistence.
+Green/Yellow/Red scan execution and preparation for scan history persistence.
 
 ## Next Milestones
 1. Add Prisma + PostgreSQL persistence for scan history.
@@ -53,3 +58,4 @@ Live repository scan execution and preparation for scan history persistence.
 4. Documentation hardening for local developer experience.
 5. Authenticated GitHub public repository listing in frontend dashboard.
 6. First live repository scan with score, checks, and recommendations.
+7. Multi-mode Green/Yellow/Red scan workflow with defensive red pattern detection.

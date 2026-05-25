@@ -14,6 +14,33 @@ const initialRepositoriesState = {
   error: '',
 }
 
+const scanModes = [
+  {
+    key: 'green',
+    title: 'Green Scan',
+    subtitle: 'Basic repository health',
+    description:
+      'Checks basic repository hygiene such as README, Dependabot, Actions, license and activity.',
+    toneClass: 'scan-mode-green',
+  },
+  {
+    key: 'yellow',
+    title: 'Yellow Scan',
+    subtitle: 'Maintainability and quality',
+    description:
+      'Reviews maintainability signals such as scripts, tests, documentation and project structure.',
+    toneClass: 'scan-mode-yellow',
+  },
+  {
+    key: 'red',
+    title: 'Red Scan',
+    subtitle: 'Security risk patterns',
+    description:
+      'Looks for common risky patterns such as hardcoded secrets, unsafe eval usage, permissive CORS and sensitive logs.',
+    toneClass: 'scan-mode-red',
+  },
+]
+
 function formatDate(value) {
   if (!value) {
     return 'Unknown'
@@ -38,6 +65,13 @@ function getSeverityBadgeClass(severity) {
   return 'severity-pill'
 }
 
+function getScanTypeLabel(scanType) {
+  if (scanType === 'green') return 'Green Scan'
+  if (scanType === 'yellow') return 'Yellow Scan'
+  if (scanType === 'red') return 'Red Scan'
+  return 'Scan'
+}
+
 function RepositoryListPage() {
   const apiBaseUrl = import.meta.env.VITE_API_URL?.trim()
   const authMeUrl = useMemo(() => {
@@ -59,6 +93,7 @@ function RepositoryListPage() {
   const [authState, setAuthState] = useState(initialAuthState)
   const [repositoriesState, setRepositoriesState] = useState(initialRepositoriesState)
   const [scanStates, setScanStates] = useState({})
+  const [selectedScanType, setSelectedScanType] = useState('green')
 
   const resetRepositoryData = useCallback(() => {
     setRepositoriesState(initialRepositoriesState)
@@ -192,7 +227,7 @@ function RepositoryListPage() {
   }, [repositoriesUrl, resetRepositoryData])
 
   const runScan = useCallback(
-    async (repositoryId) => {
+    async (repositoryId, scanType) => {
       if (!repositoriesUrl) {
         setScanStates((current) => ({
           ...current,
@@ -220,7 +255,11 @@ function RepositoryListPage() {
           credentials: 'include',
           headers: {
             Accept: 'application/json',
+            'Content-Type': 'application/json',
           },
+          body: JSON.stringify({
+            scanType,
+          }),
         })
 
         if (response.status === 401) {
@@ -425,6 +464,23 @@ function RepositoryListPage() {
         ))}
       </section>
 
+      <Card title="Choose scan mode" subtitle="Select one scan type before running">
+        <div className="scan-mode-grid">
+          {scanModes.map((mode) => (
+            <button
+              key={mode.key}
+              type="button"
+              className={`scan-mode-card ${mode.toneClass} ${selectedScanType === mode.key ? 'scan-mode-card-active' : ''}`.trim()}
+              onClick={() => setSelectedScanType(mode.key)}
+            >
+              <p className="scan-mode-title">{mode.title}</p>
+              <p className="scan-mode-subtitle">{mode.subtitle}</p>
+              <p className="scan-mode-description">{mode.description}</p>
+            </button>
+          ))}
+        </div>
+      </Card>
+
       <Card
         title="Your GitHub public repositories"
         subtitle="Run a live scan to generate score, checks, and recommendations"
@@ -487,10 +543,12 @@ function RepositoryListPage() {
                     </a>
                     <Button
                       type="button"
-                      onClick={() => void runScan(repository.id)}
+                      onClick={() => void runScan(repository.id, selectedScanType)}
                       disabled={scanState.status === 'loading'}
                     >
-                      {scanState.status === 'loading' ? 'Running scan...' : 'Run scan'}
+                      {scanState.status === 'loading'
+                        ? 'Running scan...'
+                        : `Run ${getScanTypeLabel(selectedScanType)}`}
                     </Button>
                   </div>
 
@@ -502,6 +560,9 @@ function RepositoryListPage() {
                     <div className="scan-result">
                       <div className="scan-summary">
                         <p className="scan-score">Score: {scanState.result.score}</p>
+                        <p className="scan-meta">
+                          Scan type: {getScanTypeLabel(scanState.result.scanType)}
+                        </p>
                         <p className="scan-meta">
                           Passed: {scanState.result.summary.passed} | Failed:{' '}
                           {scanState.result.summary.failed}
@@ -535,8 +596,8 @@ function RepositoryListPage() {
                                   </span>
                                 </div>
                                 <p className="scan-check-message">
-                                  {check.message}
-                                  {' · '}
+                                  {check.message}{' '}
+                                  <span className="scan-category">{check.category}</span>{' '}
                                   <span className={getSeverityBadgeClass(check.severity)}>
                                     {check.severity}
                                   </span>

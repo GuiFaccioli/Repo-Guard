@@ -22,8 +22,18 @@ export interface GithubRepositoryDetails {
   full_name: string;
   html_url: string;
   private: boolean;
+  default_branch: string;
   pushed_at: string;
   open_issues_count: number;
+}
+
+export interface GithubTreeEntry {
+  path: string;
+  mode: string;
+  type: 'blob' | 'tree';
+  size?: number;
+  sha: string;
+  url: string;
 }
 
 export interface RepositoryListItem {
@@ -48,7 +58,14 @@ export interface ListRepositoriesResponse {
   repositories: RepositoryListItem[];
 }
 
+export type ScanType = 'green' | 'yellow' | 'red';
 export type ScanSeverity = 'high' | 'medium' | 'low' | 'none';
+export type ScanCategory =
+  | 'basic-health'
+  | 'basic-security'
+  | 'activity'
+  | 'maintainability'
+  | 'security-pattern';
 
 export interface RepositoryCheckResult {
   key:
@@ -60,8 +77,27 @@ export interface RepositoryCheckResult {
     | 'license'
     | 'recentActivity'
     | 'openIssues'
-    | 'openPullRequests';
+    | 'openPullRequests'
+    | 'scripts'
+    | 'testScript'
+    | 'buildScript'
+    | 'lintScript'
+    | 'envExample'
+    | 'docsStructure'
+    | 'srcFolder'
+    | 'testsStructure'
+    | 'lockfile'
+    | 'readmeInstructions'
+    | 'committedEnv'
+    | 'hardcodedSecrets'
+    | 'evalUsage'
+    | 'sqlStringConcatenation'
+    | 'permissiveCors'
+    | 'sensitiveConsoleLogs'
+    | 'hardcodedApiKeys'
+    | 'envUsageWithoutExample';
   label: string;
+  category: ScanCategory;
   passed: boolean;
   severity: Exclude<ScanSeverity, 'none'>;
   message: string;
@@ -74,6 +110,7 @@ export interface RepositoryRecommendation {
 }
 
 export interface RepositoryScanResponse {
+  scanType: ScanType;
   repository: {
     id: number;
     name: string;

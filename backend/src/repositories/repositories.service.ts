@@ -10,16 +10,76 @@ import type { Session, SessionData } from 'express-session';
 import type {
   GithubRepositoryDetails,
   GithubRepositoryResponse,
+  GithubTreeEntry,
   ListRepositoriesResponse,
   RepositoryCheckResult,
   RepositoryRecommendation,
   RepositoryScanResponse,
   ScanSeverity,
+  ScanType,
 } from './repositories.types';
 
 type AppSession = Session & Partial<SessionData>;
 
-const SCORE_WEIGHTS = {
+type GreenCheckKey =
+  | 'readme'
+  | 'gitignore'
+  | 'packageJson'
+  | 'dependabot'
+  | 'githubActions'
+  | 'license'
+  | 'recentActivity'
+  | 'openIssues'
+  | 'openPullRequests';
+
+type YellowCheckKey =
+  | 'scripts'
+  | 'testScript'
+  | 'buildScript'
+  | 'lintScript'
+  | 'envExample'
+  | 'docsStructure'
+  | 'srcFolder'
+  | 'testsStructure'
+  | 'lockfile'
+  | 'readmeInstructions';
+
+type RedCheckKey =
+  | 'committedEnv'
+  | 'hardcodedSecrets'
+  | 'evalUsage'
+  | 'sqlStringConcatenation'
+  | 'permissiveCors'
+  | 'sensitiveConsoleLogs'
+  | 'hardcodedApiKeys'
+  | 'envUsageWithoutExample';
+
+interface RepositoryScanContext {
+  accessToken: string;
+  repository: GithubRepositoryDetails;
+  owner: string;
+  repoName: string;
+  fullName: string;
+}
+
+interface RepositoryTreeData {
+  entries: GithubTreeEntry[];
+  pathSet: Set<string>;
+  lowerPathSet: Set<string>;
+}
+
+interface GithubTreeResponse {
+  tree?: GithubTreeEntry[];
+  truncated?: boolean;
+}
+
+interface GithubContentFileResponse {
+  type?: string;
+  encoding?: string;
+  content?: string;
+}
+
+const GREEN_WEIGHTS: Record<GreenCheckKey, number> = {
   readme: 10,
   gitignore: 8,
   packageJson: 8,
@@ -29,12 +89,58 @@ const SCORE_WEIGHTS = {
   recentActivity: 14,
   openIssues: 10,
   openPullRequests: 10,
-} as const;
+};
+
+const YELLOW_WEIGHTS: Record<YellowCheckKey, number> = {
+  scripts: 10,
+  testScript: 10,
+  buildScript: 8,
+  lintScript: 8,
+  envExample: 10,
+  docsStructure: 10,
+  srcFolder: 10,
+  testsStructure: 10,
+  lockfile: 12,
+  readmeInstructions: 12,
+};
+
+const RED_WEIGHTS: Record<RedCheckKey, number> = {
+  committedEnv: 15,
+  hardcodedSecrets: 20,
+  evalUsage: 15,
+  sqlStringConcatenation: 15,
+  permissiveCors: 10,
+  sensitiveConsoleLogs: 10,
+  hardcodedApiKeys: 10,
+  envUsageWithoutExample: 5,
+};
 
 const ISSUE_THRESHOLD = 25;
 const PULL_REQUEST_THRESHOLD = 10;
 const RECENT_ACTIVITY_DAYS = 90;
 const INACTIVE_ACTIVITY_DAYS = 180;
+const MAX_PATTERN_SCAN_FILES = 30;
+
+const TEXT_FILE_EXTENSIONS = [
+  '.js',
+  '.jsx',
+  '.ts',
+  '.tsx',
+  '.mjs',
+  '.cjs',
+  '.json',
+  '.yml',
+  '.yaml',
+  '.env',
+  '.md',
+  '.txt',
+  '.py',
+  '.go',
+  '.java',
+  '.rb',
+  '.php',
+  '.sh',
+];
 
 @Injectable()
 export class RepositoriesService {
@@ -87,9 +193,11 @@ export class RepositoriesService {
   async scanRepositoryById(
     session: AppSession,
     repositoryIdRaw: string,
+    scanTypeInput?: unknown,
   ): Promise<RepositoryScanResponse> {
     const accessToken = this.requireGithubAccessToken(session);
     const repositoryId = Number.parseInt(repositoryIdRaw, 10);
+    const scanType = this.normalizeScanType(scanTypeInput);
 
     if (!Number.isInteger(repositoryId) || repositoryId <= 0) {
       throw new BadRequestException('Invalid repository id.');
@@ -108,44 +216,88 @@ export class RepositoriesService {
       throw new BadGatewayException('Could not resolve repository ownership.');
     }
 
+    const context: RepositoryScanContext = {
+      accessToken,
+      repository,
+      owner,
+      repoName,
+      fullName: repository.full_name,
+    };
+
+    const scanData =
+      scanType === 'green'
+        ? await this.runGreenScan(context)
+        : scanType === 'yellow'
+          ? await this.runYellowScan(context)
+          : await this.runRedScan(context);
+
+    const score = this.calculateScore(scanData.checks, scanType);
+    const failedChecks = scanData.checks.filter((check) => !check.passed);
+    const highestSeverity = this.getHighestSeverity(failedChecks);
+
+    return {
+      scanType,
+      repository: {
+        id: repository.id,
+        name: repository.name,
+        fullName: repository.full_name,
+        htmlUrl: repository.html_url,
+      },
+      score,
+      summary: {
+        passed: scanData.checks.filter((check) => check.passed).length,
+        failed: failedChecks.length,
+        highestSeverity,
+      },
+      checks: scanData.checks,
+      recommendations: scanData.recommendations,
+    };
+  }
+
+  private async runGreenScan(context: RepositoryScanContext) {
     const [readmeExists, gitignoreExists, packageJsonExists, dependabotExists] =
       await Promise.all([
         this.pathExists({
-          accessToken,
-          endpoint: `https://api.github.com/repos/${owner}/${repoName}/readme`,
+          accessToken: context.accessToken,
+          endpoint: `https://api.github.com/repos/${context.owner}/${context.repoName}/readme`,
         }),
         this.pathExists({
-          accessToken,
-          endpoint: `https://api.github.com/repos/${owner}/${repoName}/contents/.gitignore`,
+          accessToken: context.accessToken,
+          endpoint: `https://api.github.com/repos/${context.owner}/${context.repoName}/contents/.gitignore`,
         }),
         this.pathExists({
-          accessToken,
-          endpoint: `https://api.github.com/repos/${owner}/${repoName}/contents/package.json`,
+          accessToken: context.accessToken,
+          endpoint: `https://api.github.com/repos/${context.owner}/${context.repoName}/contents/package.json`,
         }),
         this.pathExists({
-          accessToken,
-          endpoint: `https://api.github.com/repos/${owner}/${repoName}/contents/.github/dependabot.yml`,
+          accessToken: context.accessToken,
+          endpoint: `https://api.github.com/repos/${context.owner}/${context.repoName}/contents/.github/dependabot.yml`,
         }),
       ]);
 
     const [workflowsExist, licenseExists, openIssuesCount, openPullRequestsCount] =
       await Promise.all([
-        this.hasGithubActionsWorkflows(accessToken, owner, repoName),
+        this.hasGithubActionsWorkflows(
+          context.accessToken,
+          context.owner,
+          context.repoName,
+        ),
         this.pathExists({
-          accessToken,
-          endpoint: `https://api.github.com/repos/${owner}/${repoName}/license`,
+          accessToken: context.accessToken,
+          endpoint: `https://api.github.com/repos/${context.owner}/${context.repoName}/license`,
         }),
-        this.fetchOpenSearchCount(accessToken, repository.full_name, 'issue'),
-        this.fetchOpenSearchCount(accessToken, repository.full_name, 'pr'),
+        this.fetchOpenSearchCount(context.accessToken, context.fullName, 'issue'),
+        this.fetchOpenSearchCount(context.accessToken, context.fullName, 'pr'),
       ]);
 
-    const daysSinceLastPush = this.daysSince(repository.pushed_at);
+    const daysSinceLastPush = this.daysSince(context.repository.pushed_at);
     const recentActivity = daysSinceLastPush <= RECENT_ACTIVITY_DAYS;
 
     const checks: RepositoryCheckResult[] = [
       {
         key: 'readme',
         label: 'README',
+        category: 'basic-health',
         passed: readmeExists,
         severity: 'medium',
         message: readmeExists
@@ -155,6 +307,7 @@ export class RepositoriesService {
       {
         key: 'gitignore',
         label: '.gitignore',
+        category: 'basic-health',
         passed: gitignoreExists,
         severity: 'low',
         message: gitignoreExists
@@ -164,6 +317,7 @@ export class RepositoriesService {
       {
         key: 'packageJson',
         label: 'package.json',
+        category: 'basic-health',
         passed: packageJsonExists,
         severity: 'low',
         message: packageJsonExists
@@ -173,6 +327,7 @@ export class RepositoriesService {
       {
         key: 'dependabot',
         label: 'Dependabot',
+        category: 'basic-security',
         passed: dependabotExists,
         severity: 'high',
         message: dependabotExists
@@ -182,6 +337,7 @@ export class RepositoriesService {
       {
         key: 'githubActions',
         label: 'GitHub Actions',
+        category: 'basic-security',
         passed: workflowsExist,
         severity: 'high',
         message: workflowsExist
@@ -191,6 +347,7 @@ export class RepositoriesService {
       {
         key: 'license',
         label: 'LICENSE',
+        category: 'basic-health',
         passed: licenseExists,
         severity: 'medium',
         message: licenseExists
@@ -200,15 +357,15 @@ export class RepositoriesService {
       {
         key: 'recentActivity',
         label: 'Recent activity',
+        category: 'activity',
         passed: recentActivity,
         severity: 'high',
-        message: recentActivity
-          ? `Last push was ${daysSinceLastPush} day(s) ago.`
-          : `Last push was ${daysSinceLastPush} day(s) ago.`,
+        message: `Last push was ${daysSinceLastPush} day(s) ago.`,
       },
       {
         key: 'openIssues',
         label: 'Open issues',
+        category: 'activity',
         passed: openIssuesCount <= ISSUE_THRESHOLD,
         severity: 'medium',
         message:
@@ -219,6 +376,7 @@ export class RepositoriesService {
       {
         key: 'openPullRequests',
         label: 'Open pull requests',
+        category: 'activity',
         passed: openPullRequestsCount <= PULL_REQUEST_THRESHOLD,
         severity: 'low',
         message:
@@ -228,27 +386,307 @@ export class RepositoriesService {
       },
     ];
 
-    const score = this.calculateScore(checks);
-    const failedChecks = checks.filter((check) => !check.passed);
-    const highestSeverity = this.getHighestSeverity(failedChecks);
-    const recommendations = this.buildRecommendations(failedChecks, daysSinceLastPush);
+    return {
+      checks,
+      recommendations: this.buildRecommendations(checks, daysSinceLastPush),
+    };
+  }
+
+  private async runYellowScan(context: RepositoryScanContext) {
+    const tree = await this.fetchRepositoryTree(context);
+    const packageJsonText = await this.fetchTextFileByPath(context, 'package.json');
+    const readmeText = await this.fetchReadmeText(context);
+
+    const packageJsonData = this.parseJsonObject(packageJsonText);
+    const scripts = this.extractScripts(packageJsonData);
+
+    const scriptsExists = Object.keys(scripts).length > 0;
+    const testScriptExists = this.hasScript(scripts, 'test');
+    const buildScriptExists = this.hasScript(scripts, 'build');
+    const lintScriptExists = this.hasScript(scripts, 'lint');
+
+    const envExampleExists = this.treeHasExactPath(tree, '.env.example');
+    const docsFolderExists = this.treeHasFolderPrefix(tree, 'docs/');
+    const markdownBeyondReadme = tree.entries.some(
+      (entry) =>
+        entry.type === 'blob' &&
+        entry.path.toLowerCase().endsWith('.md') &&
+        !entry.path.toLowerCase().endsWith('readme.md'),
+    );
+    const docsStructureExists = docsFolderExists || markdownBeyondReadme;
+    const srcFolderExists = this.treeHasFolderPrefix(tree, 'src/');
+    const testsFolderExists =
+      this.treeHasFolderPrefix(tree, 'test/') ||
+      this.treeHasFolderPrefix(tree, 'tests/');
+    const testFileExists = tree.entries.some(
+      (entry) =>
+        entry.type === 'blob' &&
+        /\.(test|spec)\.(js|jsx|ts|tsx|mjs|cjs|py|go)$/i.test(entry.path),
+    );
+    const testsStructureExists = testsFolderExists || testFileExists;
+    const lockfileExists = this.hasLockfile(tree);
+    const readmeInstructionsExists = this.hasReadmeInstructions(readmeText);
+
+    const checks: RepositoryCheckResult[] = [
+      {
+        key: 'scripts',
+        label: 'Project scripts',
+        category: 'maintainability',
+        passed: scriptsExists,
+        severity: 'medium',
+        message: scriptsExists
+          ? 'package.json contains scripts.'
+          : 'package.json scripts were not found.',
+      },
+      {
+        key: 'testScript',
+        label: 'Test script',
+        category: 'maintainability',
+        passed: testScriptExists,
+        severity: 'medium',
+        message: testScriptExists
+          ? 'A test script is configured.'
+          : 'No test script was found in package.json.',
+      },
+      {
+        key: 'buildScript',
+        label: 'Build script',
+        category: 'maintainability',
+        passed: buildScriptExists,
+        severity: 'low',
+        message: buildScriptExists
+          ? 'A build script is configured.'
+          : 'No build script was found in package.json.',
+      },
+      {
+        key: 'lintScript',
+        label: 'Lint script',
+        category: 'maintainability',
+        passed: lintScriptExists,
+        severity: 'low',
+        message: lintScriptExists
+          ? 'A lint script is configured.'
+          : 'No lint script was found in package.json.',
+      },
+      {
+        key: 'envExample',
+        label: '.env.example',
+        category: 'maintainability',
+        passed: envExampleExists,
+        severity: 'medium',
+        message: envExampleExists
+          ? '.env.example file found.'
+          : '.env.example file was not found.',
+      },
+      {
+        key: 'docsStructure',
+        label: 'Documentation structure',
+        category: 'maintainability',
+        passed: docsStructureExists,
+        severity: 'medium',
+        message: docsStructureExists
+          ? 'Additional documentation was found.'
+          : 'No docs folder or extra documentation files were found.',
+      },
+      {
+        key: 'srcFolder',
+        label: 'Source folder',
+        category: 'maintainability',
+        passed: srcFolderExists,
+        severity: 'low',
+        message: srcFolderExists
+          ? 'Source folder structure is present.'
+          : 'No src folder was found.',
+      },
+      {
+        key: 'testsStructure',
+        label: 'Tests structure',
+        category: 'maintainability',
+        passed: testsStructureExists,
+        severity: 'medium',
+        message: testsStructureExists
+          ? 'Test folder or test files were found.'
+          : 'No test folder or test files were found.',
+      },
+      {
+        key: 'lockfile',
+        label: 'Package lockfile',
+        category: 'maintainability',
+        passed: lockfileExists,
+        severity: 'low',
+        message: lockfileExists
+          ? 'A package manager lockfile was found.'
+          : 'No package manager lockfile was found.',
+      },
+      {
+        key: 'readmeInstructions',
+        label: 'README setup instructions',
+        category: 'maintainability',
+        passed: readmeInstructionsExists,
+        severity: 'medium',
+        message: readmeInstructionsExists
+          ? 'README appears to contain setup or run instructions.'
+          : 'README does not appear to include setup/run instructions.',
+      },
+    ];
 
     return {
-      repository: {
-        id: repository.id,
-        name: repository.name,
-        fullName: repository.full_name,
-        htmlUrl: repository.html_url,
-      },
-      score,
-      summary: {
-        passed: checks.filter((check) => check.passed).length,
-        failed: failedChecks.length,
-        highestSeverity,
-      },
       checks,
-      recommendations,
+      recommendations: this.buildRecommendations(checks, null),
     };
+  }
+
+  private async runRedScan(context: RepositoryScanContext) {
+    const tree = await this.fetchRepositoryTree(context);
+    const candidatePaths = this.getPatternScanCandidatePaths(tree);
+    const fileContents = await this.fetchManyTextFiles(context, candidatePaths);
+    const contentValues = Object.values(fileContents);
+
+    const envExampleExists = this.treeHasExactPath(tree, '.env.example');
+    const committedEnvExists = tree.entries.some(
+      (entry) => entry.type === 'blob' && this.isCommittedEnvPath(entry.path),
+    );
+
+    const hardcodedSecretsFound = this.containsPattern(
+      contentValues,
+      /(?:api[_-]?key|client[_-]?secret|access[_-]?token|password|secret)\s*[:=]\s*['"][^'"\n]{8,}['"]/i,
+    );
+
+    const evalUsageFound = this.containsPatternForExtensions(fileContents, ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'], /\beval\s*\(/i);
+
+    const sqlConcatFound = this.containsPatternForExtensions(
+      fileContents,
+      ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'],
+      /(?:select|insert|update|delete)[^;\n]*['"`]\s*\+\s*[a-z0-9_.]+/i,
+    );
+
+    const permissiveCorsFound = this.containsPattern(
+      contentValues,
+      /(?:enableCors|cors)\s*\([\s\S]{0,180}origin\s*:\s*['"`]\*['"`]/i,
+    );
+
+    const sensitiveConsoleLogFound = this.containsPatternForExtensions(
+      fileContents,
+      ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'],
+      /console\.(?:log|debug|info|warn|error)\s*\([^)]*(?:token|secret|password|api[_-]?key)[^)]*\)/i,
+    );
+
+    const hardcodedFrontendApiFound = this.containsPatternOnFrontendFiles(
+      fileContents,
+      /(?:VITE_API_URL|API_URL|BASE_URL)\s*[:=]\s*['"]https?:\/\/[^'"]+['"]/i,
+    ) || this.containsPatternOnFrontendFiles(
+      fileContents,
+      /(?:api[_-]?key|client[_-]?secret)\s*[:=]\s*['"][^'"\n]{8,}['"]/i,
+    );
+
+    const envUsageFound = this.containsPatternForExtensions(
+      fileContents,
+      ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs', '.py', '.go'],
+      /(?:process\.env|import\.meta\.env)/i,
+    );
+    const envUsageWithoutExample = envUsageFound && !envExampleExists;
+
+    const checks: RepositoryCheckResult[] = [
+      {
+        key: 'committedEnv',
+        label: 'Committed .env files',
+        category: 'security-pattern',
+        passed: !committedEnvExists,
+        severity: 'high',
+        message: committedEnvExists
+          ? 'Potential risk: committed .env-style files were found.'
+          : 'No committed .env-style files were detected.',
+      },
+      {
+        key: 'hardcodedSecrets',
+        label: 'Hardcoded secret patterns',
+        category: 'security-pattern',
+        passed: !hardcodedSecretsFound,
+        severity: 'high',
+        message: hardcodedSecretsFound
+          ? 'Potential risk: hardcoded secret-like patterns were detected.'
+          : 'No hardcoded secret-like patterns were detected.',
+      },
+      {
+        key: 'evalUsage',
+        label: 'eval usage in JS/TS',
+        category: 'security-pattern',
+        passed: !evalUsageFound,
+        severity: 'high',
+        message: evalUsageFound
+          ? 'Potential risk: eval usage was detected in JavaScript/TypeScript files.'
+          : 'No eval usage was detected in JavaScript/TypeScript files.',
+      },
+      {
+        key: 'sqlStringConcatenation',
+        label: 'SQL string concatenation patterns',
+        category: 'security-pattern',
+        passed: !sqlConcatFound,
+        severity: 'high',
+        message: sqlConcatFound
+          ? 'Potential risk: SQL string concatenation patterns were detected.'
+          : 'No SQL string concatenation patterns were detected.',
+      },
+      {
+        key: 'permissiveCors',
+        label: 'Permissive CORS patterns',
+        category: 'security-pattern',
+        passed: !permissiveCorsFound,
+        severity: 'medium',
+        message: permissiveCorsFound
+          ? "Potential risk: permissive CORS pattern with origin '*' was detected."
+          : "No permissive CORS pattern with origin '*' was detected.",
+      },
+      {
+        key: 'sensitiveConsoleLogs',
+        label: 'Sensitive console log patterns',
+        category: 'security-pattern',
+        passed: !sensitiveConsoleLogFound,
+        severity: 'medium',
+        message: sensitiveConsoleLogFound
+          ? 'Potential risk: console logs referencing sensitive keywords were detected.'
+          : 'No sensitive console log patterns were detected.',
+      },
+      {
+        key: 'hardcodedApiKeys',
+        label: 'Hardcoded frontend API settings',
+        category: 'security-pattern',
+        passed: !hardcodedFrontendApiFound,
+        severity: 'medium',
+        message: hardcodedFrontendApiFound
+          ? 'Potential risk: hardcoded frontend API URL/key patterns were detected.'
+          : 'No hardcoded frontend API URL/key patterns were detected.',
+      },
+      {
+        key: 'envUsageWithoutExample',
+        label: 'Environment usage without .env.example',
+        category: 'security-pattern',
+        passed: !envUsageWithoutExample,
+        severity: 'medium',
+        message: envUsageWithoutExample
+          ? 'Potential risk: environment variable usage was detected without .env.example.'
+          : 'Environment variable usage appears aligned with .env.example guidance.',
+      },
+    ];
+
+    return {
+      checks,
+      recommendations: this.buildRecommendations(checks, null),
+    };
+  }
+
+  private normalizeScanType(scanTypeInput: unknown): ScanType {
+    if (scanTypeInput === undefined || scanTypeInput === null || scanTypeInput === '') {
+      return 'green';
+    }
+
+    if (scanTypeInput === 'green' || scanTypeInput === 'yellow' || scanTypeInput === 'red') {
+      return scanTypeInput;
+    }
+
+    throw new BadRequestException(
+      "Invalid scanType. Supported values: 'green', 'yellow', 'red'.",
+    );
   }
 
   private requireGithubAccessToken(session: AppSession) {
@@ -280,6 +718,258 @@ export class RepositoriesService {
     }
 
     return (await response.json()) as GithubRepositoryDetails;
+  }
+
+  private async fetchRepositoryTree(
+    context: RepositoryScanContext,
+  ): Promise<RepositoryTreeData> {
+    const endpoint = new URL(
+      `https://api.github.com/repos/${context.owner}/${context.repoName}/git/trees/${encodeURIComponent(context.repository.default_branch)}`,
+    );
+    endpoint.searchParams.set('recursive', '1');
+
+    const response = await this.githubFetch(endpoint, context.accessToken);
+
+    if (response.status === 409) {
+      return {
+        entries: [],
+        pathSet: new Set<string>(),
+        lowerPathSet: new Set<string>(),
+      };
+    }
+
+    if (!response.ok) {
+      this.throwGithubError(response.status);
+    }
+
+    const payload = (await response.json()) as GithubTreeResponse;
+    const entries = Array.isArray(payload.tree) ? payload.tree : [];
+    const pathSet = new Set<string>(entries.map((entry) => entry.path));
+    const lowerPathSet = new Set<string>(
+      entries.map((entry) => entry.path.toLowerCase()),
+    );
+
+    return {
+      entries,
+      pathSet,
+      lowerPathSet,
+    };
+  }
+
+  private treeHasExactPath(tree: RepositoryTreeData, path: string): boolean {
+    return tree.lowerPathSet.has(path.toLowerCase());
+  }
+
+  private treeHasFolderPrefix(tree: RepositoryTreeData, prefix: string): boolean {
+    const lowerPrefix = prefix.toLowerCase();
+    return tree.entries.some((entry) =>
+      entry.path.toLowerCase().startsWith(lowerPrefix),
+    );
+  }
+
+  private hasLockfile(tree: RepositoryTreeData): boolean {
+    const lockfiles = [
+      'package-lock.json',
+      'yarn.lock',
+      'pnpm-lock.yaml',
+      'bun.lockb',
+      'npm-shrinkwrap.json',
+    ];
+
+    return lockfiles.some((fileName) => this.treeHasExactPath(tree, fileName));
+  }
+
+  private hasReadmeInstructions(readmeText: string | null): boolean {
+    if (!readmeText) {
+      return false;
+    }
+
+    return /(getting started|setup|install|npm run|yarn|pnpm|run locally|how to run)/i.test(
+      readmeText,
+    );
+  }
+
+  private extractScripts(
+    packageJsonData: Record<string, unknown> | null,
+  ): Record<string, unknown> {
+    if (!packageJsonData || typeof packageJsonData !== 'object') {
+      return {};
+    }
+
+    const scriptsValue = packageJsonData['scripts'];
+    if (!scriptsValue || typeof scriptsValue !== 'object') {
+      return {};
+    }
+
+    return scriptsValue as Record<string, unknown>;
+  }
+
+  private hasScript(
+    scripts: Record<string, unknown>,
+    scriptName: string,
+  ): boolean {
+    const scriptValue = scripts[scriptName];
+    return typeof scriptValue === 'string' && scriptValue.trim().length > 0;
+  }
+
+  private parseJsonObject(text: string | null): Record<string, unknown> | null {
+    if (!text) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(text) as unknown;
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async fetchReadmeText(context: RepositoryScanContext): Promise<string | null> {
+    const response = await this.githubFetch(
+      `https://api.github.com/repos/${context.owner}/${context.repoName}/readme`,
+      context.accessToken,
+    );
+
+    if (response.status === 404) {
+      return null;
+    }
+
+    if (!response.ok) {
+      this.throwGithubError(response.status);
+    }
+
+    const payload = (await response.json()) as GithubContentFileResponse;
+    if (!payload.content) {
+      return null;
+    }
+
+    if (payload.encoding === 'base64') {
+      return Buffer.from(payload.content.replace(/\n/g, ''), 'base64').toString(
+        'utf8',
+      );
+    }
+
+    return payload.content;
+  }
+
+  private async fetchTextFileByPath(
+    context: RepositoryScanContext,
+    path: string,
+  ): Promise<string | null> {
+    const encodedPath = path
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/');
+    const endpoint = `https://api.github.com/repos/${context.owner}/${context.repoName}/contents/${encodedPath}`;
+
+    const response = await this.githubFetch(endpoint, context.accessToken);
+    if (response.status === 404) {
+      return null;
+    }
+
+    if (!response.ok) {
+      this.throwGithubError(response.status);
+    }
+
+    const payload = (await response.json()) as GithubContentFileResponse | null;
+    if (!payload || payload.type !== 'file') {
+      return null;
+    }
+
+    if (payload.encoding === 'base64' && payload.content) {
+      return Buffer.from(payload.content.replace(/\n/g, ''), 'base64').toString(
+        'utf8',
+      );
+    }
+
+    return typeof payload.content === 'string' ? payload.content : null;
+  }
+
+  private getPatternScanCandidatePaths(tree: RepositoryTreeData): string[] {
+    const candidates = tree.entries
+      .filter((entry) => entry.type === 'blob')
+      .map((entry) => entry.path)
+      .filter((path) => this.isPatternScanCandidate(path))
+      .sort((a, b) => a.localeCompare(b))
+      .slice(0, MAX_PATTERN_SCAN_FILES);
+
+    return candidates;
+  }
+
+  private isPatternScanCandidate(path: string): boolean {
+    const lowerPath = path.toLowerCase();
+
+    if (
+      lowerPath.includes('node_modules/') ||
+      lowerPath.includes('dist/') ||
+      lowerPath.includes('build/') ||
+      lowerPath.includes('.min.')
+    ) {
+      return false;
+    }
+
+    return TEXT_FILE_EXTENSIONS.some((extension) => lowerPath.endsWith(extension));
+  }
+
+  private async fetchManyTextFiles(
+    context: RepositoryScanContext,
+    paths: string[],
+  ): Promise<Record<string, string>> {
+    const results: Record<string, string> = {};
+
+    for (const path of paths) {
+      const content = await this.fetchTextFileByPath(context, path);
+      if (content !== null) {
+        results[path] = content;
+      }
+    }
+
+    return results;
+  }
+
+  private isCommittedEnvPath(path: string): boolean {
+    const lowerPath = path.toLowerCase();
+    const envLikeFile = /(^|\/)\.env($|[.][^/]+$)/i.test(lowerPath);
+    const envExampleFile = /(^|\/)\.env\.example$/i.test(lowerPath);
+    return envLikeFile && !envExampleFile;
+  }
+
+  private containsPattern(values: string[], pattern: RegExp): boolean {
+    return values.some((value) => pattern.test(value));
+  }
+
+  private containsPatternForExtensions(
+    fileContents: Record<string, string>,
+    extensions: string[],
+    pattern: RegExp,
+  ): boolean {
+    return Object.entries(fileContents).some(([path, content]) => {
+      const lowerPath = path.toLowerCase();
+      const extensionMatch = extensions.some((extension) =>
+        lowerPath.endsWith(extension),
+      );
+      return extensionMatch && pattern.test(content);
+    });
+  }
+
+  private containsPatternOnFrontendFiles(
+    fileContents: Record<string, string>,
+    pattern: RegExp,
+  ): boolean {
+    return Object.entries(fileContents).some(([path, content]) => {
+      const lowerPath = path.toLowerCase();
+      const frontendScope =
+        lowerPath.startsWith('frontend/') ||
+        lowerPath.startsWith('src/') ||
+        lowerPath.includes('/src/') ||
+        lowerPath.includes('/client/');
+
+      return frontendScope && pattern.test(content);
+    });
   }
 
   private async pathExists({
@@ -343,23 +1033,24 @@ export class RepositoriesService {
     return Number(payload?.total_count ?? 0);
   }
 
-  private calculateScore(checks: RepositoryCheckResult[]): number {
-    let score = 0;
+  private calculateScore(checks: RepositoryCheckResult[], scanType: ScanType): number {
+    const scoreMap =
+      scanType === 'green'
+        ? GREEN_WEIGHTS
+        : scanType === 'yellow'
+          ? YELLOW_WEIGHTS
+          : RED_WEIGHTS;
 
+    let score = 0;
     for (const check of checks) {
       if (!check.passed) {
         continue;
       }
 
-      if (check.key === 'readme') score += SCORE_WEIGHTS.readme;
-      if (check.key === 'gitignore') score += SCORE_WEIGHTS.gitignore;
-      if (check.key === 'packageJson') score += SCORE_WEIGHTS.packageJson;
-      if (check.key === 'dependabot') score += SCORE_WEIGHTS.dependabot;
-      if (check.key === 'githubActions') score += SCORE_WEIGHTS.githubActions;
-      if (check.key === 'license') score += SCORE_WEIGHTS.license;
-      if (check.key === 'recentActivity') score += SCORE_WEIGHTS.recentActivity;
-      if (check.key === 'openIssues') score += SCORE_WEIGHTS.openIssues;
-      if (check.key === 'openPullRequests') score += SCORE_WEIGHTS.openPullRequests;
+      const checkScore = scoreMap[check.key as keyof typeof scoreMap];
+      if (typeof checkScore === 'number') {
+        score += checkScore;
+      }
     }
 
     return Math.max(0, Math.min(100, score));
@@ -384,9 +1075,10 @@ export class RepositoriesService {
   }
 
   private buildRecommendations(
-    failedChecks: RepositoryCheckResult[],
-    daysSinceLastPush: number,
+    checks: RepositoryCheckResult[],
+    daysSinceLastPush: number | null,
   ): RepositoryRecommendation[] {
+    const failedChecks = checks.filter((check) => !check.passed);
     const recommendations: RepositoryRecommendation[] = [];
 
     for (const check of failedChecks) {
@@ -410,7 +1102,10 @@ export class RepositoriesService {
 
       if (check.key === 'recentActivity') {
         recommendations.push({
-          priority: daysSinceLastPush > INACTIVE_ACTIVITY_DAYS ? 'high' : 'medium',
+          priority:
+            daysSinceLastPush !== null && daysSinceLastPush > INACTIVE_ACTIVITY_DAYS
+              ? 'high'
+              : 'medium',
           title: 'Increase repository maintenance activity',
           description:
             'Regular updates reduce maintenance risk and keep dependencies current.',
@@ -470,9 +1165,136 @@ export class RepositoriesService {
             'Reducing long-lived pull requests helps keep change flow healthy.',
         });
       }
+
+      if (check.key === 'scripts') {
+        recommendations.push({
+          priority: 'medium',
+          title: 'Add project scripts to package.json',
+          description:
+            'Consistent scripts improve maintainability and developer onboarding.',
+        });
+      }
+
+      if (check.key === 'testScript' || check.key === 'testsStructure') {
+        recommendations.push({
+          priority: 'medium',
+          title: 'Improve test setup',
+          description:
+            'Add test scripts and test structure to strengthen maintainability.',
+        });
+      }
+
+      if (check.key === 'buildScript' || check.key === 'lintScript') {
+        recommendations.push({
+          priority: 'low',
+          title: 'Add build and lint automation',
+          description:
+            'Build and lint scripts help preserve quality during development.',
+        });
+      }
+
+      if (check.key === 'docsStructure' || check.key === 'readmeInstructions') {
+        recommendations.push({
+          priority: 'medium',
+          title: 'Improve developer documentation',
+          description:
+            'Document setup and usage steps to support maintainability over time.',
+        });
+      }
+
+      if (check.key === 'envExample' || check.key === 'envUsageWithoutExample') {
+        recommendations.push({
+          priority: 'medium',
+          title: 'Provide environment variable templates',
+          description:
+            'Use .env.example to document required environment variables safely.',
+        });
+      }
+
+      if (check.key === 'lockfile') {
+        recommendations.push({
+          priority: 'low',
+          title: 'Commit a lockfile',
+          description:
+            'A lockfile improves build reproducibility and dependency consistency.',
+        });
+      }
+
+      if (check.key === 'committedEnv') {
+        recommendations.push({
+          priority: 'high',
+          title: 'Remove committed .env files',
+          description:
+            'Move secrets to environment configuration and keep .env files out of version control.',
+        });
+      }
+
+      if (check.key === 'hardcodedSecrets' || check.key === 'hardcodedApiKeys') {
+        recommendations.push({
+          priority: 'high',
+          title: 'Replace hardcoded credentials',
+          description:
+            'Potential credential patterns should be moved to secure environment configuration.',
+        });
+      }
+
+      if (check.key === 'evalUsage') {
+        recommendations.push({
+          priority: 'high',
+          title: 'Review dynamic code execution usage',
+          description:
+            'Avoid eval where possible and prefer safer parsing or mapping strategies.',
+        });
+      }
+
+      if (check.key === 'sqlStringConcatenation') {
+        recommendations.push({
+          priority: 'high',
+          title: 'Use parameterized database queries',
+          description:
+            'Potential SQL string concatenation should be replaced with parameterized queries.',
+        });
+      }
+
+      if (check.key === 'permissiveCors') {
+        recommendations.push({
+          priority: 'medium',
+          title: 'Restrict CORS origin configuration',
+          description:
+            "Avoid wildcard origins in production and allow only trusted frontend origins.",
+        });
+      }
+
+      if (check.key === 'sensitiveConsoleLogs') {
+        recommendations.push({
+          priority: 'medium',
+          title: 'Sanitize logs containing sensitive terms',
+          description:
+            'Review console logs to avoid exposing tokens, passwords, or secret-like values.',
+        });
+      }
     }
 
-    return recommendations;
+    return this.uniqueRecommendations(recommendations);
+  }
+
+  private uniqueRecommendations(
+    recommendations: RepositoryRecommendation[],
+  ): RepositoryRecommendation[] {
+    const seen = new Set<string>();
+    const unique: RepositoryRecommendation[] = [];
+
+    for (const item of recommendations) {
+      const key = `${item.priority}|${item.title}`;
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      unique.push(item);
+    }
+
+    return unique;
   }
 
   private daysSince(isoDate: string): number {

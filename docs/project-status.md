@@ -19,17 +19,21 @@ This document tracks implementation progress, current milestone focus, and the n
     - `GET /auth/me`
     - `POST /auth/logout`
   - session-based auth groundwork and OAuth state validation
+- Authenticated repository listing:
+  - backend `GET /repositories` route using server-side GitHub token
+  - safe repository response mapping (no token exposure)
+  - frontend `/repositories` hydration with loading/empty/error states
+  - real public repository rendering after successful authentication
 - Frontend deployed to Vercel with monorepo settings using `frontend/` as root directory.
 
 ## Current Milestone
-GitHub-first frontend onboarding and OAuth backend foundation.
+Authenticated repository listing and transition to repository health checks.
 
 ## Next Milestones
-1. Complete frontend-authenticated state handling after OAuth redirect.
-2. Fetch and display real GitHub repositories for authenticated users.
-3. Implement MVP repository checks and scoring strategy.
-4. Add Prisma + PostgreSQL persistence for scan history.
-5. Add GA4 + Measurement Protocol tracking for key product events.
+1. Implement MVP repository checks and scoring strategy.
+2. Add Prisma + PostgreSQL persistence for scan history.
+3. Add GA4 + Measurement Protocol tracking for key product events.
+4. Add repository detail-driven scan execution flow.
 
 ## Not Implemented Yet
 - Full repository scan engine execution.
@@ -43,3 +47,4 @@ GitHub-first frontend onboarding and OAuth backend foundation.
 2. Frontend foundation and deployment pipeline.
 3. Backend OAuth foundation and local auth validation.
 4. Documentation hardening for local developer experience.
+5. Authenticated GitHub public repository listing in frontend dashboard.

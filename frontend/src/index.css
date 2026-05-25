@@ -409,6 +409,66 @@ a {
   border-top: none;
 }
 
+.repository-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.62rem;
+}
+
+.repository-item {
+  border: 1px solid #2d3e53;
+  border-radius: 0.75rem;
+  padding: 0.72rem;
+  background: rgba(24, 34, 49, 0.42);
+  display: grid;
+  gap: 0.62rem;
+}
+
+.repository-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.72rem;
+}
+
+.repository-name {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 0.95rem;
+}
+
+.repository-description {
+  color: var(--text-muted);
+  margin-top: 0.24rem;
+  font-size: 0.84rem;
+  line-height: 1.3;
+}
+
+.repository-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.85rem;
+  color: #b3c4d7;
+  font-size: 0.8rem;
+}
+
+.repository-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.72rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.repository-actions a {
+  color: #a8cbff;
+  font-size: 0.84rem;
+}
+
+.repository-actions a:hover {
+  text-decoration: underline;
+}
+
 .table-actions {
   margin-top: 0.8rem;
 }

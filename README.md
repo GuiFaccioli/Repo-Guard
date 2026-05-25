@@ -5,12 +5,17 @@ RepoGuard is an international portfolio project focused on basic GitHub reposito
 ## Current status
 - Agent instruction base is in place (`AGENTS.md` and `agents/`).
 - Initial frontend foundation is in place with React + Vite + React Router in `frontend/`.
-- Placeholder routes are ready for:
+- The current deployed experience is GitHub-first onboarding:
+  - `/` focuses on "Continue with GitHub" entry
+  - `/auth/callback` is a clear OAuth placeholder
+  - `/repositories` is the future post-login dashboard foundation
+  - `/repositories/:id` is the future repository drill-down page
+- Placeholder routes are available for:
   - `/`
   - `/auth/callback`
   - `/repositories`
   - `/repositories/:id`
-- Real OAuth, backend, and database features are not implemented yet.
+- Real OAuth, backend, GitHub API integration, and database features are not implemented yet.
 
 ## Run frontend locally
 1. Enter the frontend directory:
@@ -40,6 +45,7 @@ Template file:
 - `frontend/.env.example`
 
 ## Next steps
-- Implement NestJS backend with GitHub OAuth.
-- Integrate frontend with real API endpoints for repository listing and scan execution.
-- Persist scan history in PostgreSQL with Prisma.
+1. Implement backend-backed GitHub OAuth with NestJS.
+2. Fetch authenticated GitHub profile (avatar/name) after connection.
+3. Integrate repository analysis data in the dashboard and detail pages.
+4. Persist scan history in PostgreSQL with Prisma.

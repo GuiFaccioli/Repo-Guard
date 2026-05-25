@@ -198,6 +198,39 @@ a {
   font-size: 0.9rem;
 }
 
+.onboarding-hero .card {
+  margin-top: 1rem;
+}
+
+.identity-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.identity-avatar {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700;
+  color: #ffffff;
+  background: linear-gradient(135deg, #1f6feb, #0a8b74);
+}
+
+.identity-name {
+  font-family: 'Space Grotesk', sans-serif;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.identity-meta {
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
 .button {
   display: inline-flex;
   align-items: center;

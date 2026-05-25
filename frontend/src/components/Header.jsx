@@ -2,8 +2,8 @@ import { NavLink } from 'react-router-dom'
 
 const navItems = [
   { to: '/', label: 'Home' },
-  { to: '/repositories', label: 'Repositories' },
-  { to: '/auth/callback', label: 'Callback' },
+  { to: '/repositories', label: 'Dashboard' },
+  { to: '/auth/callback', label: 'OAuth Placeholder' },
 ]
 
 function Header() {

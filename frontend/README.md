@@ -3,12 +3,12 @@
 This directory contains the React + Vite frontend for RepoGuard.
 
 ## Scope of this stage
-- Routing and page placeholders only.
+- GitHub-first onboarding and routing/page placeholders.
 - No real GitHub OAuth integration yet.
 - No backend integration yet.
 
 ## Available routes
-- `/`
+- `/` (GitHub-first onboarding entry)
 - `/auth/callback`
 - `/repositories`
 - `/repositories/:id`

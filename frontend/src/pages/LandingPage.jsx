@@ -2,41 +2,54 @@ import Button from '../components/Button'
 import Card from '../components/Card'
 
 const checks = [
-  'README exists',
-  '.gitignore exists',
-  'package.json exists',
-  'dependabot.yml exists',
-  'GitHub Actions exists',
-  'LICENSE exists',
-  'recent last commit',
-  'open issues',
-  'open pull requests',
+  'Repository health score',
+  'Security checks',
+  'Quality checks',
+  'Maintenance checks',
+  'Actionable recommendations',
+  'Scan history tracking',
 ]
 
 function LandingPage() {
   return (
     <div className="page page-landing">
-      <section className="hero-section">
-        <p className="eyebrow">Security and maintenance visibility</p>
-        <h1>Monitor GitHub repository risk with practical, fast decisions</h1>
+      <section className="hero-section onboarding-hero">
+        <p className="eyebrow">GitHub-first onboarding</p>
+        <h1>Continue with GitHub to start your repository health analysis</h1>
         <p className="hero-description">
-          RepoGuard generates an objective repository health score using baseline
-          checks for security, quality, and maintenance. The first version already
-          highlights what needs attention first.
+          RepoGuard is designed to connect your GitHub account first, then move
+          directly into repository analysis for security, quality, and maintenance
+          signals.
         </p>
+
+        <Card title="GitHub identity preview" subtitle="UI concept only">
+          <div className="identity-preview">
+            <div className="identity-avatar" aria-hidden="true">
+              GH
+            </div>
+            <div>
+              <p className="identity-name">@your-github-user</p>
+              <p className="identity-meta">
+                Future backend-backed GitHub profile data will appear here.
+              </p>
+            </div>
+          </div>
+        </Card>
+
         <div className="hero-actions">
-          <Button to="/repositories">Connect with GitHub</Button>
+          <Button to="/auth/callback">Continue with GitHub</Button>
           <Button to="/auth/callback" variant="secondary">
-            View callback placeholder
+            View OAuth placeholder
           </Button>
         </div>
         <p className="hero-note">
-          Real OAuth is not enabled in this stage. This button is navigation-only.
+          Real GitHub OAuth is not implemented yet. This flow is currently a
+          frontend foundation and does not authenticate.
         </p>
       </section>
 
       <section className="section">
-        <h2>Checks included in the MVP</h2>
+        <h2>What happens after GitHub connection</h2>
         <div className="check-grid">
           {checks.map((check) => (
             <Card key={check}>
@@ -46,20 +59,16 @@ function LandingPage() {
         </div>
       </section>
 
-      <section className="section">
-        <h2>How it works</h2>
-        <div className="flow-grid">
-          <Card title="1. Connect account" subtitle="GitHub OAuth">
-            <p>Authorize the minimum read access needed to list repositories and scan baseline signals.</p>
-          </Card>
-          <Card title="2. Run scan" subtitle="Objective analysis">
-            <p>The scan calculates repository score, issue severity, and actionable recommendations.</p>
-          </Card>
-          <Card title="3. Track history" subtitle="Evolution over time">
-            <p>Compare scans and track continuous improvements in repository health.</p>
-          </Card>
-        </div>
-      </section>
+      <Card
+        title="Current stage"
+        subtitle="Frontend-only foundation for portfolio presentation"
+      >
+        <p>
+          The current deployment demonstrates onboarding and future dashboard flow.
+          Backend OAuth, GitHub API integration, and database persistence are planned
+          next.
+        </p>
+      </Card>
     </div>
   )
 }

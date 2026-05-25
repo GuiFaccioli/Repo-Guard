@@ -15,7 +15,8 @@ function RepositoryDetailPage() {
     <div className="page">
       <h1>Repository details #{id}</h1>
       <p className="page-description">
-        Initial page for repository score, checks, severity, and scan history.
+        Future repository drill-down with full scan results, recommendation priority,
+        and health trend over time.
       </p>
 
       <div className="repo-grid">

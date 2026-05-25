@@ -23,7 +23,7 @@ This guide covers deployment of the RepoGuard React + Vite frontend only.
 4. Click **Deploy**.
 
 ## Post-deploy validation
-1. Open the generated URL and verify that the landing page loads.
+1. Open the generated URL and verify that the GitHub-first onboarding screen loads at `/`.
 2. Navigate through placeholder routes:
    - `/auth/callback`
    - `/repositories`
@@ -33,4 +33,5 @@ This guide covers deployment of the RepoGuard React + Vite frontend only.
 ## Notes
 - This stage does not include real OAuth.
 - This stage does not include production backend integration.
+- GitHub profile/avatar shown in the UI is conceptual until backend OAuth is implemented.
 - Environment values must be configured in the Vercel dashboard, never in a versioned `.env`.

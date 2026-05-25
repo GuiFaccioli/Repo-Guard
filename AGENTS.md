@@ -2,9 +2,9 @@
 
 ## 1) Product Vision
 RepoGuard is a full-stack application that helps developers evaluate the health of their GitHub repositories with a focus on:
-- basic security;
-- early-stage code quality signals;
-- maintenance and long-term sustainability.
+- basic security checks;
+- early code quality signals;
+- maintenance and long-term sustainability indicators.
 
 Core product flow: authenticate with GitHub, list repositories, run scans, store results, and display a dashboard with score, recommendations, and history.
 
@@ -73,3 +73,35 @@ If the request is specific (for example: docs-only, review-only, test-only), the
 1. execute only that work type;
 2. avoid product code changes outside scope;
 3. report extra ideas only as recommendations, without automatic implementation.
+
+## 11) Commit Rule
+Every task that changes files must end with a commit.
+
+Before committing, the agent must:
+1. run the required validations for the task;
+2. run git status;
+3. review git diff;
+4. confirm no secrets, .env files, tokens, credentials, private keys, or sensitive files were added.
+
+Commits must follow Conventional Commits, for example:
+- feat(auth): add GitHub OAuth foundation
+- docs(readme): improve public project presentation
+- fix(frontend): adjust onboarding layout
+
+If no files were changed, do not create an empty commit.
+
+After committing, push to origin/main unless the prompt explicitly says not to push.
+
+## 12) Documentation Boundaries
+README.md must remain public-facing, polished, and recruiter-friendly.
+
+Do not use README.md as an internal development notebook.
+
+Use:
+- README.md for public product presentation;
+- docs/project-status.md for roadmap, milestones, and implementation status;
+- docs/development-notes.md for local setup, troubleshooting, ports, .env notes, and technical guidance;
+- AGENTS.md for global agent behavior rules;
+- agents/*.md for specialist agent instructions.
+
+Internal development details, troubleshooting notes, and temporary implementation status must live inside docs/, not in the root README.md.

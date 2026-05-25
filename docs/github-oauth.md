@@ -45,13 +45,36 @@ VITE_API_URL=http://localhost:3001
 VITE_GA_MEASUREMENT_ID=
 ```
 
-## 4) MVP OAuth scopes
+## 4) Port 3001 conflict handling (Windows)
+If backend startup fails with `EADDRINUSE`, check who is using the port:
+
+```powershell
+netstat -ano | findstr :3001
+```
+
+Stop the process by PID:
+
+```powershell
+taskkill /PID <PID> /F
+```
+
+Alternative:
+- Stop the process in the original terminal with `Ctrl + C`.
+- Use another local backend port only as a temporary override.
+
+If you change local backend port, you must update all of these to the same value:
+1. `PORT` in `backend/.env`
+2. `GITHUB_CALLBACK_URL` in `backend/.env`
+3. `VITE_API_URL` in `frontend/.env`
+4. GitHub OAuth App **Authorization callback URL**
+
+## 5) MVP OAuth scopes
 Current backend requests these scopes:
 - `read:user`
 - `user:email`
 - `public_repo`
 
-## 5) Security notes
+## 6) Security notes
 1. Never expose `GITHUB_CLIENT_SECRET` to frontend code.
 2. Never return the GitHub access token in frontend responses.
 3. Do not log access tokens or secrets.

@@ -41,6 +41,20 @@ RepoGuard is an international portfolio project focused on basic GitHub reposito
 Backend default URL:
 - `http://localhost:3001`
 
+## Local port conflict (EADDRINUSE on 3001)
+If NestJS fails with `Error: listen EADDRINUSE: address already in use :::3001`, another process is already using port `3001`.
+
+Windows commands:
+- Find the process using port `3001`:
+  - `netstat -ano | findstr :3001`
+- Kill by PID:
+  - `taskkill /PID <PID> /F`
+
+Alternative options:
+- Stop the other terminal/process with `Ctrl + C`.
+- Temporarily change `PORT` in `backend/.env` and update `GITHUB_CALLBACK_URL` to the same port.
+- Update the GitHub OAuth App callback URL in Developer Settings to match the backend callback URL exactly.
+
 Required backend routes:
 - `GET /health`
 - `GET /auth/github/start`

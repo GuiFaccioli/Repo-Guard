@@ -25,6 +25,7 @@ RepoGuard is an international portfolio project focused on basic GitHub reposito
 ## Quick Vercel deployment
 When importing this repository into Vercel:
 - Root Directory: `frontend`
+- Framework Preset: `Vite`
 - Build Command: `npm run build`
 - Output Directory: `dist`
 

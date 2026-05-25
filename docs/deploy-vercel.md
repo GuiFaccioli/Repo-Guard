@@ -11,6 +11,7 @@ This guide covers deployment of the RepoGuard React + Vite frontend only.
 1. Open https://vercel.com/new and select `GuiFaccioli/Repo-Guard`.
 2. In project settings, set:
    - **Root Directory**: `frontend`
+   - **Framework Preset**: `Vite`
    - **Build Command**: `npm run build`
    - **Output Directory**: `dist`
 3. In **Environment Variables**, configure when needed:

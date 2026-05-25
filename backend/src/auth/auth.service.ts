@@ -8,7 +8,6 @@ import type { Session, SessionData } from 'express-session';
 import { randomBytes } from 'node:crypto';
 import type {
   GithubOAuthTokenResponse,
-  GithubUserEmail,
   GithubUserProfile,
   SessionGithubUser,
 } from './auth.types';
@@ -122,14 +121,12 @@ export class AuthService {
     }
 
     const profileData = (await profileResponse.json()) as GithubUserProfile;
-    const email = await this.fetchPrimaryEmail(accessToken);
-
     const githubUser: SessionGithubUser = {
-      id: profileData.id,
+      githubId: profileData.id,
       login: profileData.login,
       name: profileData.name,
       avatarUrl: profileData.avatar_url,
-      email,
+      htmlUrl: profileData.html_url,
     };
 
     session.githubUser = githubUser;
@@ -139,7 +136,20 @@ export class AuthService {
   }
 
   getAuthenticatedUser(session: AppSession) {
-    return session.githubUser ?? null;
+    const user = session.githubUser;
+    if (!user) {
+      return null;
+    }
+
+    const legacyUser = user as SessionGithubUser & { id?: number };
+
+    return {
+      githubId: legacyUser.githubId ?? legacyUser.id ?? 0,
+      login: user.login,
+      name: user.name,
+      avatarUrl: user.avatarUrl,
+      htmlUrl: user.htmlUrl ?? `https://github.com/${user.login}`,
+    };
   }
 
   async logout(session: AppSession) {
@@ -152,23 +162,5 @@ export class AuthService {
         resolve();
       });
     });
-  }
-
-  private async fetchPrimaryEmail(accessToken: string) {
-    const emailResponse = await fetch('https://api.github.com/user/emails', {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: 'application/vnd.github+json',
-        'User-Agent': 'RepoGuard',
-      },
-    });
-
-    if (!emailResponse.ok) {
-      return null;
-    }
-
-    const emails = (await emailResponse.json()) as GithubUserEmail[];
-    const primaryEmail = emails.find((email) => email.primary && email.verified);
-    return primaryEmail?.email ?? null;
   }
 }

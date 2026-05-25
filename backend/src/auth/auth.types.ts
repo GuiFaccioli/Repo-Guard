@@ -11,19 +11,13 @@ export interface GithubUserProfile {
   login: string;
   name: string | null;
   avatar_url: string;
-}
-
-export interface GithubUserEmail {
-  email: string;
-  primary: boolean;
-  verified: boolean;
-  visibility: 'public' | 'private' | null;
+  html_url: string;
 }
 
 export interface SessionGithubUser {
-  id: number;
+  githubId: number;
   login: string;
   name: string | null;
   avatarUrl: string;
-  email: string | null;
+  htmlUrl: string;
 }

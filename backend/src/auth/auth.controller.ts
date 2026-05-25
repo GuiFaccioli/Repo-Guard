@@ -52,7 +52,13 @@ export class AuthController {
 
     return {
       authenticated: true,
-      user,
+      user: {
+        githubId: user.githubId,
+        login: user.login,
+        name: user.name,
+        avatarUrl: user.avatarUrl,
+        htmlUrl: user.htmlUrl,
+      },
     };
   }
 

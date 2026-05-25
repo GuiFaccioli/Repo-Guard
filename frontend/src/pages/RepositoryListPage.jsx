@@ -389,7 +389,7 @@ function RepositoryListPage() {
         if (!repository) {
           return 'Recently completed'
         }
-        return `${repository.name} · ${formatDate(lastCompletedScan.completedAt)}`
+        return `${repository.name} - ${formatDate(lastCompletedScan.completedAt)}`
       })()
     : 'No scan completed'
 
@@ -441,8 +441,8 @@ function RepositoryListPage() {
 
   return (
     <div className="page dashboard-page workspace-dashboard-page">
-      <section className="workspace-topbar">
-        <div>
+      <section className="workspace-hero">
+        <div className="workspace-hero-copy">
           <p className="eyebrow">GitHub repository workspace</p>
           <h1>Repository analysis dashboard</h1>
           <p className="page-description">
@@ -451,53 +451,54 @@ function RepositoryListPage() {
           </p>
         </div>
 
-        {isAuthenticated ? (
-          <div className="workspace-topbar-user">
-            <img
-              className="identity-avatar-image"
-              src={authState.user.avatarUrl}
-              alt={`${authState.user.login} avatar`}
-              loading="lazy"
-            />
-            <div>
-              <p className="identity-name">{displayName}</p>
-              <p className="identity-meta">@{authState.user.login}</p>
-              <a className="profile-link" href={profileUrl} target="_blank" rel="noreferrer">
-                View GitHub profile
-              </a>
+        <div className="workspace-hero-side">
+          {isAuthenticated ? (
+            <div className="workspace-topbar-user">
+              <img
+                className="identity-avatar-image"
+                src={authState.user.avatarUrl}
+                alt={`${authState.user.login} avatar`}
+                loading="lazy"
+              />
+              <div>
+                <p className="identity-name">{displayName}</p>
+                <p className="identity-meta">@{authState.user.login}</p>
+                <a className="profile-link" href={profileUrl} target="_blank" rel="noreferrer">
+                  View GitHub profile
+                </a>
+              </div>
+              <span className="connection-badge">Connected</span>
             </div>
-            <span className="connection-badge">Connected</span>
-          </div>
-        ) : (
-          <div className="workspace-topbar-user">
-            <div className="github-mark" aria-hidden="true">
-              GH
+          ) : (
+            <div className="workspace-topbar-user">
+              <div className="github-mark" aria-hidden="true">
+                GH
+              </div>
+              <div>
+                <p className="identity-name">GitHub connection required</p>
+                <p className="identity-meta">
+                  Authenticate first to load repositories and run scans.
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="identity-name">GitHub connection required</p>
-              <p className="identity-meta">
-                Authenticate first to load repositories and run scans.
-              </p>
-            </div>
-          </div>
-        )}
-      </section>
+          )}
 
-      <section className="workspace-controls">
-        <Button type="button" onClick={() => void loadSession()} variant="secondary">
-          Refresh session
-        </Button>
-        <Button
-          type="button"
-          onClick={() => void loadRepositories()}
-          variant="secondary"
-          disabled={!isAuthenticated || isLoadingRepositories}
-        >
-          {isLoadingRepositories ? 'Refreshing...' : 'Refresh repositories'}
-        </Button>
-        <Button to="/" variant="secondary">
-          Back to connect
-        </Button>
+          <div className="workspace-toolbar" role="toolbar" aria-label="Repository dashboard actions">
+            <Button type="button" onClick={() => void loadSession()} variant="secondary">
+              Refresh session
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void loadRepositories()}
+              disabled={!isAuthenticated || isLoadingRepositories}
+            >
+              {isLoadingRepositories ? 'Refreshing...' : 'Refresh repositories'}
+            </Button>
+            <Button to="/" variant="secondary">
+              Back to connect
+            </Button>
+          </div>
+        </div>
       </section>
 
       {isLoadingSession ? (
@@ -596,13 +597,13 @@ function RepositoryListPage() {
                 <table className="repository-table">
                   <thead>
                     <tr>
-                      <th>Repository</th>
-                      <th>Language</th>
-                      <th>Visibility</th>
-                      <th>Open issues</th>
-                      <th>Last push</th>
-                      <th>Scan score</th>
-                      <th>Action</th>
+                      <th className="col-repository">Repository</th>
+                      <th className="col-language">Language</th>
+                      <th className="col-visibility">Visibility</th>
+                      <th className="col-issues">Open issues</th>
+                      <th className="col-push">Last push</th>
+                      <th className="col-score">Scan score</th>
+                      <th className="col-action">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -622,7 +623,7 @@ function RepositoryListPage() {
                           key={repository.id}
                           className={rowIsActive ? 'repository-row-active' : ''}
                         >
-                          <td>
+                          <td className="cell-repository">
                             <div className="repo-name-cell">
                               <p className="repository-name">{repository.fullName}</p>
                               <p className="repository-description">
@@ -638,15 +639,15 @@ function RepositoryListPage() {
                               </a>
                             </div>
                           </td>
-                          <td>{repository.language || 'Not specified'}</td>
-                          <td>
-                            <span className="status-pill">
+                          <td className="cell-language">{repository.language || 'Not specified'}</td>
+                          <td className="cell-visibility">
+                            <span className="status-pill status-pill-compact">
                               {repository.private ? 'private' : 'public'}
                             </span>
                           </td>
-                          <td>{repository.openIssues}</td>
-                          <td>{formatDate(repository.pushedAt)}</td>
-                          <td>
+                          <td className="cell-issues">{repository.openIssues}</td>
+                          <td className="cell-push">{formatDate(repository.pushedAt)}</td>
+                          <td className="cell-score">
                             <span
                               className={
                                 hasResult
@@ -659,8 +660,8 @@ function RepositoryListPage() {
                               {getScanStateLabel(scanState)}
                             </span>
                           </td>
-                          <td>
-                            <div className="repository-actions">
+                          <td className="cell-action">
+                            <div className="repository-actions-row">
                               <Button
                                 type="button"
                                 onClick={() =>
@@ -681,7 +682,7 @@ function RepositoryListPage() {
                                     setActiveResultRepositoryId(repository.id)
                                   }
                                 >
-                                  View result
+                                  Open result
                                 </Button>
                               ) : null}
                             </div>
@@ -721,30 +722,40 @@ function RepositoryListPage() {
             activeResultState.result &&
             activeRepository ? (
               <div className="scan-result-panel">
-                <div className="scan-summary">
-                  <p className="scan-score">Score: {activeResultState.result.score}</p>
-                  <p className="scan-meta">Repository: {activeRepository.fullName}</p>
+                <div className="scan-result-head">
+                  <div>
+                    <p className="scan-score">{activeResultState.result.score}</p>
+                    <p className="scan-score-label">Repository health score</p>
+                  </div>
+                  <span
+                    className={getSeverityBadgeClass(
+                      activeResultState.result.summary.highestSeverity,
+                    )}
+                  >
+                    {activeResultState.result.summary.highestSeverity}
+                  </span>
+                </div>
+
+                <div className="scan-result-facts">
                   <p className="scan-meta">
-                    Scan type: {getScanTypeLabel(activeResultState.result.scanType)}
+                    <span className="scan-meta-label">Repository</span>
+                    <span>{activeRepository.fullName}</span>
                   </p>
                   <p className="scan-meta">
-                    Passed: {activeResultState.result.summary.passed} | Failed:{' '}
-                    {activeResultState.result.summary.failed}
+                    <span className="scan-meta-label">Scan type</span>
+                    <span>{getScanTypeLabel(activeResultState.result.scanType)}</span>
                   </p>
                   <p className="scan-meta">
-                    Highest severity:{' '}
-                    <span
-                      className={getSeverityBadgeClass(
-                        activeResultState.result.summary.highestSeverity,
-                      )}
-                    >
-                      {activeResultState.result.summary.highestSeverity}
+                    <span className="scan-meta-label">Checks</span>
+                    <span>
+                      Passed {activeResultState.result.summary.passed} / Failed{' '}
+                      {activeResultState.result.summary.failed}
                     </span>
                   </p>
                 </div>
 
                 <div className="scan-grid">
-                  <div>
+                  <div className="scan-section-block">
                     <p className="scan-section-title">Checks</p>
                     <ul className="scan-check-list">
                       {activeResultState.result.checks.map((check) => (
@@ -767,7 +778,7 @@ function RepositoryListPage() {
                     </ul>
                   </div>
 
-                  <div>
+                  <div className="scan-section-block">
                     <p className="scan-section-title">Recommendations</p>
                     {activeResultState.result.recommendations.length ? (
                       <ul className="scan-recommendations">

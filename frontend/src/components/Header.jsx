@@ -1,8 +1,8 @@
 import { NavLink } from 'react-router-dom'
 
 const navItems = [
-  { to: '/', label: 'Inicio' },
-  { to: '/repositories', label: 'Repositorios' },
+  { to: '/', label: 'Home' },
+  { to: '/repositories', label: 'Repositories' },
   { to: '/auth/callback', label: 'Callback' },
 ]
 
@@ -19,7 +19,7 @@ function Header() {
         </div>
       </div>
 
-      <nav aria-label="Navegacao principal">
+      <nav aria-label="Main navigation">
         <ul className="nav-list">
           {navItems.map((item) => (
             <li key={item.to}>

@@ -1,55 +1,55 @@
-# Agente Frontend (React + Vite + React Router)
+# Frontend Agent (React + Vite + React Router)
 
-## Missão
-Construir interfaces do RepoGuard com clareza de informação, boa experiência de navegação e integração consistente com a API.
+## Mission
+Build RepoGuard interfaces with clear information hierarchy, strong navigation UX, and consistent API integration.
 
-## Stack e Escopo
+## Stack and Scope
 - React
 - Vite
 - React Router
 
-Este agente atua somente no frontend. Não alterar backend, schema de banco ou regras de autenticação no servidor.
+This agent works only on frontend scope. Do not change backend code, database schema, or server authentication rules.
 
-## Organização de Código
-1. Separar páginas, componentes reutilizáveis, hooks e serviços.
-2. Evitar componentes monolíticos; dividir por responsabilidade.
-3. Reaproveitar componentes visuais e utilitários de estado/feedback.
+## Code Organization
+1. Separate pages, reusable components, hooks, and services.
+2. Avoid monolithic components; split by responsibility.
+3. Reuse visual and state-feedback patterns.
 
-## Consumo de API
-1. Centralizar chamadas HTTP em uma camada única (`services/api` ou equivalente).
-2. Não espalhar `fetch/axios` diretamente por múltiplos componentes.
-3. Padronizar tratamento de loading, erro e sucesso.
-4. Tratar expiração de sessão e falhas de autenticação de forma previsível.
+## API Consumption
+1. Centralize HTTP calls in a single layer (`services/api` or equivalent).
+2. Do not scatter `fetch/axios` calls across many components.
+3. Standardize loading, error, and success states.
+4. Handle session expiration and authentication failure predictably.
 
-## Estado e Fluxos
-1. Priorizar estado local quando suficiente.
-2. Evitar duplicação de estado entre componentes irmãos sem necessidade.
-3. Garantir fluxo claro para:
-   - login com GitHub;
-   - listagem de repositórios;
-   - visualização de score;
-   - leitura de recomendações;
-   - histórico de análises.
+## State and User Flows
+1. Prefer local state when enough for the use case.
+2. Avoid unnecessary duplicated state across sibling components.
+3. Keep clear flows for:
+   - GitHub login;
+   - repository listing;
+   - score visualization;
+   - recommendation consumption;
+   - scan history.
 
-## Formulários e Validação
-1. Validar campos obrigatórios no cliente para melhorar UX.
-2. Exibir mensagens de erro objetivas e acionáveis.
-3. Não confiar apenas na validação do frontend; considerar backend como fonte final.
+## Forms and Validation
+1. Validate required fields on the client to improve UX.
+2. Show clear and actionable error messages.
+3. Do not rely only on frontend validation; backend is the final authority.
 
-## Regras de Qualidade
-1. Não duplicar lógica de transformação de dados.
-2. Não acoplar componentes de UI a detalhes internos de endpoints.
-3. Manter rotas e navegação previsíveis com React Router.
-4. Garantir acessibilidade básica (labels, foco, contraste mínimo e estados interativos claros).
+## Quality Rules
+1. Avoid duplicated data-transformation logic.
+2. Do not tightly couple UI components to endpoint internals.
+3. Keep routing predictable with React Router.
+4. Ensure baseline accessibility (labels, focus states, minimum contrast, clear interactive states).
 
-## Segurança no Frontend
-1. Nunca armazenar secrets de servidor no frontend.
-2. Não expor token sensível em logs do browser.
-3. Evitar persistir dados sensíveis em `localStorage` sem necessidade e sem critério.
+## Frontend Security
+1. Never store server secrets in frontend code.
+2. Do not expose sensitive tokens in browser logs.
+3. Avoid persisting sensitive data in `localStorage` without clear need and policy.
 
-## Critérios de Entrega
-Antes de concluir tarefa de frontend:
-1. confirmar que chamadas HTTP estão centralizadas;
-2. confirmar ausência de lógica duplicada relevante;
-3. confirmar estados de loading/erro para fluxos principais;
-4. confirmar que nenhum arquivo de backend foi alterado.
+## Delivery Checklist
+Before concluding frontend work:
+1. confirm HTTP calls are centralized;
+2. confirm no meaningful logic duplication remains;
+3. confirm loading/error states on core flows;
+4. confirm no backend files were changed.

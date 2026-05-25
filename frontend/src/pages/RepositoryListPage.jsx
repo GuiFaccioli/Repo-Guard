@@ -10,18 +10,18 @@ const mockRepositories = [
 function RepositoryListPage() {
   return (
     <div className="page">
-      <h1>Repositorios</h1>
+      <h1>Repositories</h1>
       <p className="page-description">
-        Lista placeholder para validar navegacao e estrutura visual antes da
-        integracao real com API.
+        Placeholder list to validate navigation and visual structure before
+        real API integration.
       </p>
 
       <div className="repo-grid">
         {mockRepositories.map((repository) => (
           <Card key={repository.id} title={repository.name}>
-            <p className="card-subtitle">Visibilidade: {repository.visibility}</p>
+            <p className="card-subtitle">Visibility: {repository.visibility}</p>
             <Button to={`/repositories/${repository.id}`} variant="secondary">
-              Ver detalhe
+              View details
             </Button>
           </Card>
         ))}

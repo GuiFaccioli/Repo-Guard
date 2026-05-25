@@ -2,15 +2,15 @@ import Button from '../components/Button'
 import Card from '../components/Card'
 
 const checks = [
-  'README existe',
-  '.gitignore existe',
-  'package.json existe',
-  'dependabot.yml existe',
-  'GitHub Actions existe',
-  'LICENSE existe',
-  'ultimo commit recente',
-  'issues abertas',
-  'pull requests abertas',
+  'README exists',
+  '.gitignore exists',
+  'package.json exists',
+  'dependabot.yml exists',
+  'GitHub Actions exists',
+  'LICENSE exists',
+  'recent last commit',
+  'open issues',
+  'open pull requests',
 ]
 
 function LandingPage() {
@@ -18,25 +18,25 @@ function LandingPage() {
     <div className="page page-landing">
       <section className="hero-section">
         <p className="eyebrow">Security and maintenance visibility</p>
-        <h1>Monitore riscos de repositorios GitHub com foco em acao rapida</h1>
+        <h1>Monitor GitHub repository risk with practical, fast decisions</h1>
         <p className="hero-description">
-          RepoGuard gera um score objetivo de saude do repositorio com checks basicos
-          de seguranca, qualidade e manutencao. A primeira versao ja prioriza o que
-          precisa de atencao.
+          RepoGuard generates an objective repository health score using baseline
+          checks for security, quality, and maintenance. The first version already
+          highlights what needs attention first.
         </p>
         <div className="hero-actions">
-          <Button to="/repositories">Conectar com GitHub</Button>
+          <Button to="/repositories">Connect with GitHub</Button>
           <Button to="/auth/callback" variant="secondary">
-            Ver callback placeholder
+            View callback placeholder
           </Button>
         </div>
         <p className="hero-note">
-          OAuth real ainda nao habilitado nesta etapa. Botao apenas de navegacao.
+          Real OAuth is not enabled in this stage. This button is navigation-only.
         </p>
       </section>
 
       <section className="section">
-        <h2>Checks incluidos no MVP</h2>
+        <h2>Checks included in the MVP</h2>
         <div className="check-grid">
           {checks.map((check) => (
             <Card key={check}>
@@ -47,16 +47,16 @@ function LandingPage() {
       </section>
 
       <section className="section">
-        <h2>Como funciona</h2>
+        <h2>How it works</h2>
         <div className="flow-grid">
-          <Card title="1. Conectar conta" subtitle="GitHub OAuth">
-            <p>Autorize a leitura necessaria para listar repositorios e analisar sinais basicos.</p>
+          <Card title="1. Connect account" subtitle="GitHub OAuth">
+            <p>Authorize the minimum read access needed to list repositories and scan baseline signals.</p>
           </Card>
-          <Card title="2. Executar scan" subtitle="Analise objetiva">
-            <p>O scan calcula score geral, severidade dos pontos e recomendacoes acionaveis.</p>
+          <Card title="2. Run scan" subtitle="Objective analysis">
+            <p>The scan calculates repository score, issue severity, and actionable recommendations.</p>
           </Card>
-          <Card title="3. Acompanhar historico" subtitle="Evolucao ao longo do tempo">
-            <p>Compare scans e acompanhe a melhoria continua da saude dos repositorios.</p>
+          <Card title="3. Track history" subtitle="Evolution over time">
+            <p>Compare scans and track continuous improvements in repository health.</p>
           </Card>
         </div>
       </section>

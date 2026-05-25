@@ -1,41 +1,41 @@
 # RepoGuard
 
-RepoGuard e um projeto de portfolio focado em analise basica de seguranca, qualidade e manutencao de repositorios GitHub.
+RepoGuard is an international portfolio project focused on basic GitHub repository analysis across three core pillars: security, quality, and maintenance.
 
-## Status atual
-- Base de instrucoes para agentes criada (`AGENTS.md` e pasta `agents/`).
-- Frontend inicial criado com React + Vite + React Router em `frontend/`.
-- Rotas placeholder prontas para:
+## Current status
+- Agent instruction base is in place (`AGENTS.md` and `agents/`).
+- Initial frontend foundation is in place with React + Vite + React Router in `frontend/`.
+- Placeholder routes are ready for:
   - `/`
   - `/auth/callback`
   - `/repositories`
   - `/repositories/:id`
-- OAuth real, backend e banco ainda nao implementados.
+- Real OAuth, backend, and database features are not implemented yet.
 
-## Como rodar o frontend localmente
-1. Entre na pasta:
+## Run frontend locally
+1. Enter the frontend directory:
    - `cd frontend`
-2. Instale dependencias:
+2. Install dependencies:
    - `npm install`
-3. Rode em desenvolvimento:
+3. Start development server:
    - `npm run dev`
-4. Build de producao:
+4. Build for production:
    - `npm run build`
 
-## Deploy rapido na Vercel
-Ao importar este repositorio na Vercel:
+## Quick Vercel deployment
+When importing this repository into Vercel:
 - Root Directory: `frontend`
 - Build Command: `npm run build`
 - Output Directory: `dist`
 
-Variaveis esperadas no frontend:
+Expected frontend environment variables:
 - `VITE_API_URL`
 - `VITE_GA_MEASUREMENT_ID`
 
-Modelo disponivel em:
+Template file:
 - `frontend/.env.example`
 
-## Proximos passos
-- Implementar backend NestJS com OAuth GitHub.
-- Integrar frontend com API real de repositorios e scans.
-- Persistir historico de scans em PostgreSQL com Prisma.
+## Next steps
+- Implement NestJS backend with GitHub OAuth.
+- Integrate frontend with real API endpoints for repository listing and scan execution.
+- Persist scan history in PostgreSQL with Prisma.

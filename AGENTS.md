@@ -1,75 +1,75 @@
-# RepoGuard - Guia Geral para Agentes
+# RepoGuard - Global Agent Guide
 
-## 1) Visão do Produto
-RepoGuard é uma aplicação full-stack para ajudar desenvolvedores a avaliar a saúde dos seus repositórios GitHub com foco em:
-- segurança básica;
-- qualidade de código em nível de sinais iniciais;
-- manutenção e continuidade do projeto.
+## 1) Product Vision
+RepoGuard is a full-stack application that helps developers evaluate the health of their GitHub repositories with a focus on:
+- basic security;
+- early-stage code quality signals;
+- maintenance and long-term sustainability.
 
-O fluxo central do produto é: autenticar com GitHub, listar repositórios, executar análises, armazenar resultados e exibir dashboard com score, recomendações e histórico.
+Core product flow: authenticate with GitHub, list repositories, run scans, store results, and display a dashboard with score, recommendations, and history.
 
-## 2) Stack Oficial do Projeto
+## 2) Official Project Stack
 - Frontend: React + Vite + React Router
 - Backend: Node.js + NestJS + Prisma
-- Banco: PostgreSQL
-- Integrações: GitHub OAuth + GitHub REST API
+- Database: PostgreSQL
+- Integrations: GitHub OAuth + GitHub REST API
 - Analytics: Google Analytics 4 (GA4) + Measurement Protocol
 
-Não trocar stack sem solicitação explícita.
+Do not change the stack unless explicitly requested.
 
-## 3) Objetivo do MVP
-Entregar uma base funcional que permita:
-1. autenticação via GitHub OAuth;
-2. listagem de repositórios do usuário autenticado;
-3. execução de checks iniciais (segurança, qualidade, manutenção);
-4. persistência dos resultados no PostgreSQL;
-5. dashboard React com score por repositório, recomendações objetivas e histórico de análises.
+## 3) MVP Objective
+Deliver a functional base that supports:
+1. authentication via GitHub OAuth;
+2. listing repositories for the authenticated user;
+3. running initial checks (security, quality, maintenance);
+4. persisting results in PostgreSQL;
+5. a React dashboard with repository score, actionable recommendations, and scan history.
 
-## 4) Regras de Trabalho
-1. Respeitar estritamente o escopo da tarefa solicitada.
-2. Não implementar funcionalidades não pedidas ("scope creep").
-3. Para tarefas grandes, criar plano por etapas antes de implementar.
-4. Priorizar mudanças pequenas, revisáveis e testáveis.
-5. Registrar suposições quando faltar contexto.
-6. Nunca executar comandos destrutivos sem solicitação explícita.
+## 4) Working Rules
+1. Strictly respect the requested task scope.
+2. Do not implement unrequested features (scope creep).
+3. For large tasks, create a step-by-step plan before implementation.
+4. Prioritize small, reviewable, testable changes.
+5. Document assumptions when context is missing.
+6. Never run destructive commands without explicit request.
 
-## 5) Padrões de Segurança Obrigatórios
-1. Nunca expor token OAuth, refresh token, segredo de cliente ou credenciais de banco.
-2. Tratar `.env` como fonte de configuração sensível, nunca como artefato versionável.
-3. Aplicar validação de entrada em qualquer dado externo (usuário, webhook, GitHub API, query params).
-4. Evitar logs com dados sensíveis (token, e-mail completo, headers de autenticação, payload privado).
-5. Aplicar princípio do menor privilégio nas permissões solicitadas ao GitHub.
+## 5) Mandatory Security Standards
+1. Never expose OAuth tokens, refresh tokens, client secrets, or database credentials.
+2. Treat `.env` as sensitive configuration, never as a versioned artifact.
+3. Validate all external input (user data, webhooks, GitHub API responses, query params).
+4. Avoid logging sensitive data (tokens, full email addresses, auth headers, private payloads).
+5. Apply least privilege to GitHub permission scopes.
 
-## 6) Limites do Agente
-1. Não criar nem usar tokens/secrets reais.
-2. Não publicar credenciais em código, logs, exemplos ou documentação.
-3. Não alterar arquitetura global sem alinhamento.
-4. Não alterar escopo original da tarefa para "aproveitar" mudanças paralelas.
-5. Não iniciar implementação de backend/frontend/db quando a tarefa for apenas documental.
+## 6) Agent Boundaries
+1. Do not create or use real tokens/secrets.
+2. Do not publish credentials in code, logs, examples, or docs.
+3. Do not change global architecture without alignment.
+4. Do not expand scope to include parallel tasks.
+5. Do not start backend/frontend/database implementation when the task is documentation-only.
 
-## 7) Validações Esperadas Antes de Encerrar Tarefa
-1. Confirmar se o objetivo solicitado foi cumprido por completo.
-2. Listar arquivos alterados e impacto técnico de cada um.
-3. Informar riscos, pendências e decisões que exigem validação humana.
-4. Confirmar que nenhuma credencial real foi criada ou exposta.
-5. Sinalizar próximos passos seguros e de menor risco.
+## 7) Required Validation Before Closing Any Task
+1. Confirm the requested objective was fully delivered.
+2. List changed files and technical impact per file.
+3. Report risks, pending items, and decisions that need human validation.
+4. Confirm no real credentials were created or exposed.
+5. Suggest safe next steps with low execution risk.
 
-## 8) Formato de Resposta Final de Cada Tarefa
-Toda resposta final do agente deve incluir:
-1. resumo do que foi feito;
-2. lista de arquivos alterados/criados;
-3. validações executadas;
-4. limitações ou pontos não cobertos;
-5. próximos passos recomendados.
+## 8) Final Response Format for Each Task
+Every final response from an agent must include:
+1. summary of work completed;
+2. list of created/changed files;
+3. validations performed;
+4. limitations or uncovered points;
+5. recommended next steps.
 
-## 9) Regra de Planejamento para Tarefas Grandes
-Antes de implementar qualquer tarefa com impacto amplo (múltiplos módulos, integração externa, migração de dados, autenticação, analytics), o agente deve:
-1. propor plano com etapas curtas;
-2. explicitar riscos por etapa;
-3. só então iniciar execução.
+## 9) Planning Rule for Large Tasks
+Before implementing high-impact work (multiple modules, external integrations, data migrations, authentication, analytics), the agent must:
+1. propose a short phased plan;
+2. state risks per phase;
+3. only then begin execution.
 
-## 10) Regra de Preservação de Escopo
-Se a solicitação for específica (ex.: apenas documentação, apenas revisão, apenas teste), o agente deve:
-1. executar somente esse tipo de trabalho;
-2. evitar criação de código de produto fora do escopo;
-3. reportar sugestões extras apenas como recomendação, sem implementação automática.
+## 10) Scope Preservation Rule
+If the request is specific (for example: docs-only, review-only, test-only), the agent must:
+1. execute only that work type;
+2. avoid product code changes outside scope;
+3. report extra ideas only as recommendations, without automatic implementation.

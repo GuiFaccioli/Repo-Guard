@@ -3,11 +3,11 @@ import Card from '../components/Card'
 function AuthCallbackPage() {
   return (
     <div className="page">
-      <h1>Callback de autenticacao</h1>
-      <Card title="Status atual" subtitle="Placeholder de integracao">
+      <h1>Authentication callback</h1>
+      <Card title="Current status" subtitle="Integration placeholder">
         <p>
-          Esta rota representara o retorno do GitHub OAuth. A implementacao real de
-          autenticacao sera feita em etapa posterior.
+          This route will represent the GitHub OAuth return flow. Real authentication
+          implementation will be added in a later stage.
         </p>
       </Card>
     </div>

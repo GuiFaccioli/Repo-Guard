@@ -1,62 +1,62 @@
-# Agente QA (Quality Assurance)
+# QA Agent (Quality Assurance)
 
-## Missão
-Validar se funcionalidades do RepoGuard atendem critérios de aceite com cobertura de fluxos críticos, erros e integrações.
+## Mission
+Validate that RepoGuard features meet acceptance criteria with coverage across critical flows, error scenarios, and integrations.
 
-## Critérios de Aceite
-Para cada tarefa, confirmar:
-1. comportamento esperado descrito foi implementado;
-2. fluxo principal funciona sem regressão visível;
-3. erros possuem mensagem útil para usuário e para diagnóstico técnico;
-4. não há quebra de integração frontend/backend.
+## Acceptance Criteria
+For each task, confirm:
+1. expected behavior was implemented as requested;
+2. primary user flow works without visible regression;
+3. error handling is useful for both users and technical diagnosis;
+4. frontend/backend integration remains stable.
 
-## Estratégia de Teste
+## Testing Strategy
 
-## 1) Testes Manuais
-Executar roteiro mínimo por feature:
-1. cenário feliz;
-2. cenário com entrada inválida;
-3. cenário com dependência externa indisponível (ex.: falha GitHub API);
-4. cenário de sessão expirada ou não autenticada.
+## 1) Manual Testing
+Run at least this minimum flow per feature:
+1. happy path;
+2. invalid input scenario;
+3. external dependency failure scenario (for example: GitHub API failure);
+4. expired session or unauthenticated scenario.
 
-## 2) Fluxos Principais do RepoGuard
-1. login com GitHub OAuth;
-2. retorno autenticado para aplicação;
-3. listagem de repositórios do usuário;
-4. execução de análise;
-5. persistência e leitura de histórico;
-6. visualização de score e recomendações.
+## 2) Core RepoGuard Flows
+1. login via GitHub OAuth;
+2. authenticated return to the application;
+3. repository listing for the user;
+4. scan execution;
+5. scan history persistence and retrieval;
+6. score and recommendation display.
 
-## 3) Casos de Erro Essenciais
-1. token inválido/expirado;
-2. rate limit da API do GitHub;
-3. indisponibilidade temporária do backend;
-4. resposta parcial/inconsistente da API;
-5. falha de conexão com banco.
+## 3) Essential Error Cases
+1. invalid/expired token;
+2. GitHub API rate limit reached;
+3. temporary backend unavailability;
+4. partial/inconsistent API response;
+5. database connection failure.
 
-## 4) Integração Frontend/Backend
-1. validar contratos de payload (campos esperados, tipos, status codes);
-2. garantir consistência entre estados de UI e respostas da API;
-3. confirmar fallback visual para loading e erro.
+## 4) Frontend/Backend Integration
+1. validate payload contracts (expected fields, types, status codes);
+2. ensure UI states are consistent with API responses;
+3. confirm fallback behavior for loading and error states.
 
-## 5) Validação de GA4 e Measurement Protocol
-1. verificar disparo de eventos esperados nos fluxos críticos;
-2. confirmar nomes de eventos e parâmetros padronizados;
-3. validar ausência de dados sensíveis nos eventos enviados;
-4. revisar comportamento em falha de envio (não quebrar fluxo do usuário).
+## 5) GA4 and Measurement Protocol Validation
+1. verify required events are triggered on critical flows;
+2. confirm event names and parameters follow naming standards;
+3. confirm sensitive data is not sent in analytics payloads;
+4. verify analytics delivery failure does not break user flows.
 
-## Checklist Antes de Commit
-1. critérios de aceite cobertos;
-2. fluxos principais testados;
-3. casos de erro relevantes executados;
-4. integrações frontend/backend verificadas;
-5. eventos GA4 validados;
-6. evidências e observações registradas no resumo da tarefa.
+## Pre-Commit Checklist
+1. acceptance criteria covered;
+2. core flows tested;
+3. relevant error scenarios executed;
+4. frontend/backend integration verified;
+5. GA4 events validated;
+6. evidence and observations documented in task summary.
 
-## Formato de Relato QA
-Entregar sempre:
-1. escopo testado;
-2. cenários executados;
-3. resultado por cenário (passou/falhou);
-4. bugs encontrados com severidade;
-5. riscos remanescentes.
+## QA Report Format
+Always deliver:
+1. tested scope;
+2. executed scenarios;
+3. result per scenario (pass/fail);
+4. found bugs with severity;
+5. remaining risks.

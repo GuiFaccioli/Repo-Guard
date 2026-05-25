@@ -1,4 +1,4 @@
-import { Controller, Get, Req } from '@nestjs/common';
+import { Controller, Get, Param, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { RepositoriesService } from './repositories.service';
 
@@ -11,5 +11,10 @@ export class RepositoriesController {
     return this.repositoriesService.listAuthenticatedPublicRepositories(
       req.session,
     );
+  }
+
+  @Post(':id/scans')
+  async runRepositoryScan(@Req() req: Request, @Param('id') id: string) {
+    return this.repositoriesService.scanRepositoryById(req.session, id);
   }
 }

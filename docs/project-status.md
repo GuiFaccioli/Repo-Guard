@@ -24,23 +24,27 @@ This document tracks implementation progress, current milestone focus, and the n
   - safe repository response mapping (no token exposure)
   - frontend `/repositories` hydration with loading/empty/error states
   - real public repository rendering after successful authentication
+- First live repository health scan:
+  - backend `POST /repositories/:id/scans` route
+  - weighted checks for security, quality, and maintenance signals
+  - score calculation (0-100), severity summary, and recommendations
+  - frontend "Run scan" action with loading/error/result states per repository
 - Frontend deployed to Vercel with monorepo settings using `frontend/` as root directory.
 
 ## Current Milestone
-Authenticated repository listing and transition to repository health checks.
+Live repository scan execution and preparation for scan history persistence.
 
 ## Next Milestones
-1. Implement MVP repository checks and scoring strategy.
-2. Add Prisma + PostgreSQL persistence for scan history.
-3. Add GA4 + Measurement Protocol tracking for key product events.
-4. Add repository detail-driven scan execution flow.
+1. Add Prisma + PostgreSQL persistence for scan history.
+2. Add GA4 + Measurement Protocol tracking for key product events.
+3. Add repository detail-driven scan execution flow.
+4. Expand scan rule coverage and threshold tuning.
 
 ## Not Implemented Yet
-- Full repository scan engine execution.
 - Persistent database models and migrations (Prisma/PostgreSQL).
-- Real dashboard metrics sourced from stored scan history.
+- Scan history persistence and historical trend views.
 - Production-ready analytics instrumentation and event validation.
-- Advanced security/quality/maintenance checks beyond MVP baseline.
+- Advanced security/quality/maintenance checks beyond current baseline.
 
 ## Development Progression (High Level)
 1. Documentation and agent workflow structure.
@@ -48,3 +52,4 @@ Authenticated repository listing and transition to repository health checks.
 3. Backend OAuth foundation and local auth validation.
 4. Documentation hardening for local developer experience.
 5. Authenticated GitHub public repository listing in frontend dashboard.
+6. First live repository scan with score, checks, and recommendations.

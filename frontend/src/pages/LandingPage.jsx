@@ -59,6 +59,27 @@ function writeJsonStorage(key, value) {
   }
 }
 
+function readJsonLocalStorage(key, fallbackValue) {
+  try {
+    const rawValue = window.localStorage.getItem(key)
+    if (!rawValue) {
+      return fallbackValue
+    }
+
+    return JSON.parse(rawValue)
+  } catch {
+    return fallbackValue
+  }
+}
+
+function writeJsonLocalStorage(key, value) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // Ignore storage write failures to keep scan rendering stable.
+  }
+}
+
 function normalizeCodeContext(codeContextInput) {
   if (!Array.isArray(codeContextInput)) {
     return null
@@ -93,6 +114,132 @@ function normalizeCodeContext(codeContextInput) {
     .filter(Boolean)
 
   return normalizedContext.length ? normalizedContext : null
+}
+
+function normalizePositiveLineNumber(value) {
+  return Number.isFinite(value) && Number(value) > 0
+    ? Math.floor(Number(value))
+    : null
+}
+
+function normalizeBoundedString(value, maxLength) {
+  return typeof value === 'string' && value.trim()
+    ? value.trim().slice(0, maxLength)
+    : null
+}
+
+function normalizePointerString(value) {
+  return typeof value === 'string' && value.trim()
+    ? value.trimEnd().slice(0, 100)
+    : null
+}
+
+function normalizeGithubEvidenceUrl(value) {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null
+  }
+
+  const normalizedValue = value.trim()
+  return /^https:\/\/github\.com\/[^\s?#]+(?:#L\d+)?$/i.test(normalizedValue)
+    ? normalizedValue.slice(0, 2048)
+    : null
+}
+
+function buildSafeEvidenceFromFinding(finding, checkId) {
+  return {
+    checklist: 'security_basics',
+    checkId,
+    label: typeof finding?.title === 'string' ? finding.title : '',
+    status: finding?.status === 'pass' ? 'pass' : 'fail',
+    details: typeof finding?.summary === 'string' ? finding.summary : '',
+    filePath: normalizeBoundedString(finding?.filePath, 300),
+    lineNumber: normalizePositiveLineNumber(finding?.lineNumber),
+    codeExcerpt: normalizeBoundedString(finding?.safeExcerpt, 220),
+    codeContext: normalizeCodeContext(finding?.codeContext),
+    flaggedLineNumber: normalizePositiveLineNumber(finding?.flaggedLineNumber),
+    flaggedLinePointer: normalizePointerString(finding?.flaggedLinePointer),
+    flaggedLineExplanation: normalizeBoundedString(finding?.flaggedLineExplanation, 220),
+    githubFileUrl: normalizeGithubEvidenceUrl(finding?.githubFileUrl),
+    githubFolderUrl: normalizeGithubEvidenceUrl(finding?.githubFolderUrl),
+  }
+}
+
+function buildSafeEvidenceFromItem(item, checkId) {
+  return {
+    checklist: 'security_basics',
+    checkId,
+    label: typeof item?.label === 'string' ? item.label : '',
+    status: item?.status === 'pass' ? 'pass' : 'fail',
+    details: typeof item?.details === 'string' ? item.details : '',
+    filePath: normalizeBoundedString(item?.filePath, 300),
+    lineNumber: normalizePositiveLineNumber(item?.lineNumber),
+    codeExcerpt: normalizeBoundedString(item?.codeExcerpt, 220),
+    codeContext: normalizeCodeContext(item?.codeContext),
+    flaggedLineNumber: normalizePositiveLineNumber(item?.flaggedLineNumber),
+    flaggedLinePointer: normalizePointerString(item?.flaggedLinePointer),
+    flaggedLineExplanation: normalizeBoundedString(item?.flaggedLineExplanation, 220),
+    githubFileUrl: normalizeGithubEvidenceUrl(item?.githubFileUrl),
+    githubFolderUrl: normalizeGithubEvidenceUrl(item?.githubFolderUrl),
+  }
+}
+
+function buildCodeSafetyEvidenceByCheckId(scanResult) {
+  const codeSafetyEvidence = {}
+  if (!scanResult || typeof scanResult !== 'object') {
+    return codeSafetyEvidence
+  }
+
+  const evidencePacketFindings = Array.isArray(scanResult?.evidencePacket?.findings)
+    ? scanResult.evidencePacket.findings
+    : []
+
+  for (const finding of evidencePacketFindings) {
+    const directCheckId =
+      typeof finding?.checkId === 'string' ? finding.checkId.trim() : ''
+    const resolvedCheckId =
+      directCheckId && CODE_SAFETY_CHECK_IDS.has(directCheckId)
+        ? directCheckId
+        : resolveRepositoryCheckId({
+            label: finding?.title,
+          })
+
+    if (!resolvedCheckId || !CODE_SAFETY_CHECK_IDS.has(resolvedCheckId)) {
+      continue
+    }
+
+    codeSafetyEvidence[resolvedCheckId] = buildSafeEvidenceFromFinding(
+      finding,
+      resolvedCheckId,
+    )
+  }
+
+  const resultGroups = Array.isArray(scanResult.results) ? scanResult.results : []
+  for (const group of resultGroups) {
+    if (group?.checklist !== 'security_basics' || !Array.isArray(group.items)) {
+      continue
+    }
+
+    for (const item of group.items) {
+      const resolvedCheckId = resolveRepositoryCheckId({
+        label: item?.label,
+      })
+
+      if (!resolvedCheckId || !CODE_SAFETY_CHECK_IDS.has(resolvedCheckId)) {
+        continue
+      }
+
+      if (codeSafetyEvidence[resolvedCheckId]) {
+        continue
+      }
+
+      codeSafetyEvidence[resolvedCheckId] = buildSafeEvidenceFromItem(
+        item,
+        resolvedCheckId,
+      )
+    }
+  }
+
+  return codeSafetyEvidence
 }
 
 function buildGuideRouteRepositoryId(repository) {
@@ -171,146 +318,20 @@ function LandingPage() {
     Boolean(scansUrl && isRepositoryUrlValid && hasChecklistSelection) &&
     scanState.status !== 'loading'
 
+  const latestCodeSafetyEvidenceByCheckId = useMemo(
+    () => buildCodeSafetyEvidenceByCheckId(scanState.result),
+    [scanState.result],
+  )
+
   useEffect(() => {
     if (scanState.status !== 'success' || !scanState.result) {
       return
     }
 
-    const repositoryEvidenceChecks = {}
-    const evidencePacketFindings = Array.isArray(scanState.result?.evidencePacket?.findings)
-      ? scanState.result.evidencePacket.findings
-      : []
-
-    for (const finding of evidencePacketFindings) {
-      const directCheckId =
-        typeof finding?.checkId === 'string' ? finding.checkId.trim() : ''
-      const resolvedCheckId =
-        directCheckId && CODE_SAFETY_CHECK_IDS.has(directCheckId)
-          ? directCheckId
-          : resolveRepositoryCheckId({
-              label: finding?.title,
-            })
-
-      if (!resolvedCheckId || !CODE_SAFETY_CHECK_IDS.has(resolvedCheckId)) {
-        continue
-      }
-
-      const safeEvidence = {
-        checklist: 'security_basics',
-        checkId: resolvedCheckId,
-        label: typeof finding?.title === 'string' ? finding.title : '',
-        status: finding?.status === 'pass' ? 'pass' : 'fail',
-        details: typeof finding?.summary === 'string' ? finding.summary : '',
-        filePath:
-          typeof finding?.filePath === 'string' && finding.filePath.trim()
-            ? finding.filePath.trim()
-            : null,
-        lineNumber:
-          Number.isFinite(finding?.lineNumber) && Number(finding.lineNumber) > 0
-            ? Math.floor(Number(finding.lineNumber))
-            : null,
-        codeExcerpt:
-          typeof finding?.safeExcerpt === 'string' && finding.safeExcerpt.trim()
-            ? finding.safeExcerpt.trim().slice(0, 220)
-            : null,
-        codeContext: normalizeCodeContext(finding?.codeContext),
-        flaggedLineNumber:
-          Number.isFinite(finding?.flaggedLineNumber) &&
-          Number(finding.flaggedLineNumber) > 0
-            ? Math.floor(Number(finding.flaggedLineNumber))
-            : null,
-        flaggedLinePointer:
-          typeof finding?.flaggedLinePointer === 'string' &&
-          finding.flaggedLinePointer.trim()
-            ? finding.flaggedLinePointer.trimEnd().slice(0, 100)
-            : null,
-        flaggedLineExplanation:
-          typeof finding?.flaggedLineExplanation === 'string' &&
-          finding.flaggedLineExplanation.trim()
-            ? finding.flaggedLineExplanation.trim().slice(0, 220)
-            : null,
-        githubFileUrl:
-          typeof finding?.githubFileUrl === 'string' && finding.githubFileUrl.trim()
-            ? finding.githubFileUrl.trim()
-            : null,
-        githubFolderUrl:
-          typeof finding?.githubFolderUrl === 'string' && finding.githubFolderUrl.trim()
-            ? finding.githubFolderUrl.trim()
-            : null,
-      }
-
-      repositoryEvidenceChecks[resolvedCheckId] = safeEvidence
-    }
-
-    const resultGroups = Array.isArray(scanState.result.results)
-      ? scanState.result.results
-      : []
-
-    for (const group of resultGroups) {
-      if (group?.checklist !== 'security_basics' || !Array.isArray(group.items)) {
-        continue
-      }
-
-      for (const item of group.items) {
-        const resolvedCheckId = resolveRepositoryCheckId({
-          label: item?.label,
-        })
-
-        if (!resolvedCheckId || !CODE_SAFETY_CHECK_IDS.has(resolvedCheckId)) {
-          continue
-        }
-
-        if (repositoryEvidenceChecks[resolvedCheckId]) {
-          continue
-        }
-
-        const safeEvidence = {
-          checklist: 'security_basics',
-          checkId: resolvedCheckId,
-          label: typeof item?.label === 'string' ? item.label : '',
-          status: item?.status === 'pass' ? 'pass' : 'fail',
-          details: typeof item?.details === 'string' ? item.details : '',
-          filePath:
-            typeof item?.filePath === 'string' && item.filePath.trim()
-              ? item.filePath.trim()
-              : null,
-          lineNumber:
-            Number.isFinite(item?.lineNumber) && Number(item.lineNumber) > 0
-              ? Math.floor(Number(item.lineNumber))
-              : null,
-          codeExcerpt:
-            typeof item?.codeExcerpt === 'string' && item.codeExcerpt.trim()
-              ? item.codeExcerpt.trim().slice(0, 220)
-              : null,
-          codeContext: normalizeCodeContext(item?.codeContext),
-          flaggedLineNumber:
-            Number.isFinite(item?.flaggedLineNumber) && Number(item.flaggedLineNumber) > 0
-              ? Math.floor(Number(item.flaggedLineNumber))
-              : null,
-          flaggedLinePointer:
-            typeof item?.flaggedLinePointer === 'string' && item.flaggedLinePointer.trim()
-              ? item.flaggedLinePointer.trimEnd().slice(0, 100)
-              : null,
-          flaggedLineExplanation:
-            typeof item?.flaggedLineExplanation === 'string' &&
-            item.flaggedLineExplanation.trim()
-              ? item.flaggedLineExplanation.trim().slice(0, 220)
-              : null,
-          githubFileUrl:
-            typeof item?.githubFileUrl === 'string' && item.githubFileUrl.trim()
-              ? item.githubFileUrl.trim()
-              : null,
-          githubFolderUrl:
-            typeof item?.githubFolderUrl === 'string' && item.githubFolderUrl.trim()
-              ? item.githubFolderUrl.trim()
-              : null,
-        }
-
-        repositoryEvidenceChecks[resolvedCheckId] = safeEvidence
-      }
-    }
-
-    const previousCache = readJsonStorage(SAFE_SCAN_EVIDENCE_CACHE_KEY, {})
+    const repositoryEvidenceChecks = latestCodeSafetyEvidenceByCheckId
+    const previousCache =
+      readJsonLocalStorage(SAFE_SCAN_EVIDENCE_CACHE_KEY, null) ||
+      readJsonStorage(SAFE_SCAN_EVIDENCE_CACHE_KEY, {})
     const previousRepositories =
       previousCache &&
       typeof previousCache === 'object' &&
@@ -334,7 +355,14 @@ function LandingPage() {
     }
 
     writeJsonStorage(SAFE_SCAN_EVIDENCE_CACHE_KEY, nextCache)
-  }, [repositoryFullName, routeRepositoryId, scanState.result, scanState.status])
+    writeJsonLocalStorage(SAFE_SCAN_EVIDENCE_CACHE_KEY, nextCache)
+  }, [
+    latestCodeSafetyEvidenceByCheckId,
+    repositoryFullName,
+    routeRepositoryId,
+    scanState.result,
+    scanState.status,
+  ])
 
   useEffect(() => {
     document.title = 'RepoGuard · Scan repository'
@@ -584,6 +612,36 @@ function LandingPage() {
                         const checkId = mappedCheckId || fallbackCheckId
                         const isPassed = item.status === 'pass'
                         const isCodeSafetySignal = group.checklist === 'security_basics'
+                        const safeCodeEvidence = isCodeSafetySignal
+                          ? latestCodeSafetyEvidenceByCheckId[checkId] || null
+                          : null
+                        const displayFilePath =
+                          safeCodeEvidence?.filePath ||
+                          normalizeBoundedString(item?.filePath, 300)
+                        const displayLineNumber =
+                          safeCodeEvidence?.lineNumber ||
+                          normalizePositiveLineNumber(item?.lineNumber)
+                        const displayCodeExcerpt =
+                          safeCodeEvidence?.codeExcerpt ||
+                          normalizeBoundedString(item?.codeExcerpt, 220)
+                        const displayCodeContext =
+                          safeCodeEvidence?.codeContext ||
+                          normalizeCodeContext(item?.codeContext)
+                        const displayFlaggedLineNumber =
+                          safeCodeEvidence?.flaggedLineNumber ||
+                          normalizePositiveLineNumber(item?.flaggedLineNumber)
+                        const displayFlaggedLinePointer =
+                          safeCodeEvidence?.flaggedLinePointer ||
+                          normalizePointerString(item?.flaggedLinePointer)
+                        const displayFlaggedLineExplanation =
+                          safeCodeEvidence?.flaggedLineExplanation ||
+                          normalizeBoundedString(item?.flaggedLineExplanation, 220)
+                        const displayGithubFileUrl =
+                          safeCodeEvidence?.githubFileUrl ||
+                          normalizeGithubEvidenceUrl(item?.githubFileUrl)
+                        const displayGithubFolderUrl =
+                          safeCodeEvidence?.githubFolderUrl ||
+                          normalizeGithubEvidenceUrl(item?.githubFolderUrl)
                         const isPriorityCheck =
                           !isCodeSafetySignal &&
                           (PRIORITY_REPOSITORY_HEALTH_CHECK_IDS.has(checkId) ||
@@ -611,9 +669,9 @@ function LandingPage() {
                                   <span className="scan-result-priority">Priority</span>
                                 ) : null}
                               </p>
-                              {typeof item.filePath === 'string' && item.filePath.trim() ? (
+                              {displayFilePath ? (
                                 <p className="scan-result-file">
-                                  File: <span className="scan-result-file-path">{item.filePath}</span>
+                                  File: <span className="scan-result-file-path">{displayFilePath}</span>
                                 </p>
                               ) : null}
                               <p className="scan-result-details">{item.details}</p>
@@ -625,47 +683,20 @@ function LandingPage() {
                                 state={{
                                   repositoryFullName,
                                   checklistId: group.checklist,
-                                  checkStatus: item.status,
+                                  checkStatus: safeCodeEvidence?.status || item.status,
                                   checkLabel: item.label,
-                                  details: typeof item.details === 'string' ? item.details : '',
-                                  filePath:
-                                    typeof item.filePath === 'string' && item.filePath.trim()
-                                      ? item.filePath.trim()
-                                      : null,
-                                  lineNumber:
-                                    Number.isFinite(item.lineNumber) && Number(item.lineNumber) > 0
-                                      ? Math.floor(Number(item.lineNumber))
-                                      : null,
-                                  codeExcerpt:
-                                    typeof item.codeExcerpt === 'string' && item.codeExcerpt.trim()
-                                      ? item.codeExcerpt.trim().slice(0, 220)
-                                      : null,
-                                  codeContext: normalizeCodeContext(item?.codeContext),
-                                  flaggedLineNumber:
-                                    Number.isFinite(item?.flaggedLineNumber) &&
-                                    Number(item.flaggedLineNumber) > 0
-                                      ? Math.floor(Number(item.flaggedLineNumber))
-                                      : null,
-                                  flaggedLinePointer:
-                                    typeof item?.flaggedLinePointer === 'string' &&
-                                    item.flaggedLinePointer.trim()
-                                      ? item.flaggedLinePointer.trimEnd().slice(0, 100)
-                                      : null,
-                                  flaggedLineExplanation:
-                                    typeof item?.flaggedLineExplanation === 'string' &&
-                                    item.flaggedLineExplanation.trim()
-                                      ? item.flaggedLineExplanation.trim().slice(0, 220)
-                                      : null,
-                                  githubFileUrl:
-                                    typeof item.githubFileUrl === 'string' &&
-                                    item.githubFileUrl.trim()
-                                      ? item.githubFileUrl.trim()
-                                      : null,
-                                  githubFolderUrl:
-                                    typeof item.githubFolderUrl === 'string' &&
-                                    item.githubFolderUrl.trim()
-                                      ? item.githubFolderUrl.trim()
-                                      : null,
+                                  details:
+                                    safeCodeEvidence?.details ||
+                                    (typeof item.details === 'string' ? item.details : ''),
+                                  filePath: displayFilePath,
+                                  lineNumber: displayLineNumber,
+                                  codeExcerpt: displayCodeExcerpt,
+                                  codeContext: displayCodeContext,
+                                  flaggedLineNumber: displayFlaggedLineNumber,
+                                  flaggedLinePointer: displayFlaggedLinePointer,
+                                  flaggedLineExplanation: displayFlaggedLineExplanation,
+                                  githubFileUrl: displayGithubFileUrl,
+                                  githubFolderUrl: displayGithubFolderUrl,
                                 }}
                               >
                                 {learnMoreLabel}

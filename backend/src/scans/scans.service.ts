@@ -91,10 +91,12 @@ const SQL_CONCAT_PATTERN =
 const EVAL_USAGE_PATTERN = /\beval\s*\(|\bnew\s+Function\s*\(/i;
 const CORS_WILDCARD_PATTERN =
   /cors\s*\(\s*\{[\s\S]{0,220}?origin\s*:\s*['"`]\*['"`][\s\S]{0,220}?\}\s*\)/i;
+const ENABLE_CORS_WILDCARD_PATTERN =
+  /app\.enableCors\s*\(\s*\{[\s\S]{0,220}?origin\s*:\s*['"`]\*['"`][\s\S]{0,220}?\}\s*\)/i;
 const CORS_HEADER_WILDCARD_PATTERN =
   /access-control-allow-origin[\s'"`:=,]*\*/i;
 const CORS_DEFAULT_USAGE_PATTERN =
-  /app\.use\s*\(\s*cors\s*\(\s*\)\s*\)|\bcors\s*\(\s*\)\s*;?/i;
+  /app\.use\s*\(\s*cors\s*\(\s*\)\s*\)|app\.enableCors\s*\(\s*\)|\bcors\s*\(\s*\)\s*;?/i;
 
 const ENV_FILE_NAMES = new Set([
   '.env',
@@ -749,6 +751,7 @@ export class ScansService {
 
     const wildcardCorsMatch = this.findPatternMatch(codeSamples, [
       CORS_WILDCARD_PATTERN,
+      ENABLE_CORS_WILDCARD_PATTERN,
       CORS_HEADER_WILDCARD_PATTERN,
     ]);
     const defaultCorsMatch = wildcardCorsMatch
@@ -1001,7 +1004,7 @@ export class ScansService {
     }
 
     if (checkId === 'permissive-cors') {
-      return 'This CORS configuration may allow broader origin access than intended.';
+      return 'This is the CORS configuration RepoGuard flagged for review.';
     }
 
     return 'This is the pattern RepoGuard flagged.';

@@ -24,9 +24,33 @@ function readJsonStorage(key, fallbackValue) {
   }
 }
 
+function readJsonLocalStorage(key, fallbackValue) {
+  try {
+    const rawValue = window.localStorage.getItem(key)
+    if (!rawValue) {
+      return fallbackValue
+    }
+
+    return JSON.parse(rawValue)
+  } catch {
+    return fallbackValue
+  }
+}
+
 function normalizeHttpUrl(value) {
   return typeof value === 'string' && /^https?:\/\//i.test(value.trim())
     ? value.trim()
+    : null
+}
+
+function normalizeGithubEvidenceUrl(value) {
+  if (typeof value !== 'string' || !value.trim()) {
+    return null
+  }
+
+  const normalizedValue = value.trim()
+  return /^https:\/\/github\.com\/[^\s?#]+(?:#L\d+)?$/i.test(normalizedValue)
+    ? normalizedValue.slice(0, 2048)
     : null
 }
 
@@ -67,7 +91,9 @@ function normalizeSafeCodeContextLines(codeContextInput) {
 }
 
 function resolveSafeEvidence(routeRepositoryId, checkId, routeState) {
-  const cache = readJsonStorage(SAFE_SCAN_EVIDENCE_CACHE_KEY, {})
+  const cache =
+    readJsonLocalStorage(SAFE_SCAN_EVIDENCE_CACHE_KEY, null) ||
+    readJsonStorage(SAFE_SCAN_EVIDENCE_CACHE_KEY, {})
   const repositories =
     cache &&
     typeof cache === 'object' &&
@@ -104,59 +130,62 @@ function resolveSafeEvidence(routeRepositoryId, checkId, routeState) {
         : null
 
   const codeExcerptCandidate =
-    typeof routeState?.codeExcerpt === 'string' && routeState.codeExcerpt.trim()
-      ? routeState.codeExcerpt.trim()
-      : typeof cachedCheckEvidence?.codeExcerpt === 'string' &&
-          cachedCheckEvidence.codeExcerpt.trim()
-        ? cachedCheckEvidence.codeExcerpt.trim()
+    typeof cachedCheckEvidence?.codeExcerpt === 'string' &&
+    cachedCheckEvidence.codeExcerpt.trim()
+      ? cachedCheckEvidence.codeExcerpt.trim()
+      : typeof routeState?.codeExcerpt === 'string' && routeState.codeExcerpt.trim()
+        ? routeState.codeExcerpt.trim()
         : null
   const codeContextCandidate =
-    normalizeSafeCodeContextLines(routeState?.codeContext) ||
-    normalizeSafeCodeContextLines(cachedCheckEvidence?.codeContext)
+    normalizeSafeCodeContextLines(cachedCheckEvidence?.codeContext) ||
+    normalizeSafeCodeContextLines(routeState?.codeContext)
   const flaggedLineNumberCandidate =
-    Number.isFinite(routeState?.flaggedLineNumber) && Number(routeState.flaggedLineNumber) > 0
-      ? Math.floor(Number(routeState.flaggedLineNumber))
-      : Number.isFinite(cachedCheckEvidence?.flaggedLineNumber) &&
-          Number(cachedCheckEvidence.flaggedLineNumber) > 0
-        ? Math.floor(Number(cachedCheckEvidence.flaggedLineNumber))
+    Number.isFinite(cachedCheckEvidence?.flaggedLineNumber) &&
+    Number(cachedCheckEvidence.flaggedLineNumber) > 0
+      ? Math.floor(Number(cachedCheckEvidence.flaggedLineNumber))
+      : Number.isFinite(routeState?.flaggedLineNumber) &&
+          Number(routeState.flaggedLineNumber) > 0
+        ? Math.floor(Number(routeState.flaggedLineNumber))
         : null
   const flaggedLinePointerCandidate =
-    typeof routeState?.flaggedLinePointer === 'string' && routeState.flaggedLinePointer.trim()
-      ? routeState.flaggedLinePointer.trimEnd().slice(0, 100)
-      : typeof cachedCheckEvidence?.flaggedLinePointer === 'string' &&
-          cachedCheckEvidence.flaggedLinePointer.trim()
-        ? cachedCheckEvidence.flaggedLinePointer.trimEnd().slice(0, 100)
+    typeof cachedCheckEvidence?.flaggedLinePointer === 'string' &&
+    cachedCheckEvidence.flaggedLinePointer.trim()
+      ? cachedCheckEvidence.flaggedLinePointer.trimEnd().slice(0, 100)
+      : typeof routeState?.flaggedLinePointer === 'string' &&
+          routeState.flaggedLinePointer.trim()
+        ? routeState.flaggedLinePointer.trimEnd().slice(0, 100)
         : null
   const flaggedLineExplanationCandidate =
-    typeof routeState?.flaggedLineExplanation === 'string' &&
-    routeState.flaggedLineExplanation.trim()
-      ? routeState.flaggedLineExplanation.trim().slice(0, 220)
-      : typeof cachedCheckEvidence?.flaggedLineExplanation === 'string' &&
-          cachedCheckEvidence.flaggedLineExplanation.trim()
-        ? cachedCheckEvidence.flaggedLineExplanation.trim().slice(0, 220)
+    typeof cachedCheckEvidence?.flaggedLineExplanation === 'string' &&
+    cachedCheckEvidence.flaggedLineExplanation.trim()
+      ? cachedCheckEvidence.flaggedLineExplanation.trim().slice(0, 220)
+      : typeof routeState?.flaggedLineExplanation === 'string' &&
+          routeState.flaggedLineExplanation.trim()
+        ? routeState.flaggedLineExplanation.trim().slice(0, 220)
         : null
 
   const filePathCandidate =
-    typeof routeState?.filePath === 'string' && routeState.filePath.trim()
-      ? routeState.filePath.trim()
-      : typeof cachedCheckEvidence?.filePath === 'string' &&
-          cachedCheckEvidence.filePath.trim()
-        ? cachedCheckEvidence.filePath.trim()
+    typeof cachedCheckEvidence?.filePath === 'string' &&
+    cachedCheckEvidence.filePath.trim()
+      ? cachedCheckEvidence.filePath.trim()
+      : typeof routeState?.filePath === 'string' && routeState.filePath.trim()
+        ? routeState.filePath.trim()
         : null
 
   const detailsCandidate =
-    typeof routeState?.details === 'string' && routeState.details.trim()
-      ? routeState.details.trim()
-      : typeof cachedCheckEvidence?.details === 'string' && cachedCheckEvidence.details.trim()
-        ? cachedCheckEvidence.details.trim()
+    typeof cachedCheckEvidence?.details === 'string' &&
+    cachedCheckEvidence.details.trim()
+      ? cachedCheckEvidence.details.trim()
+      : typeof routeState?.details === 'string' && routeState.details.trim()
+        ? routeState.details.trim()
         : ''
 
   const githubFileUrlCandidate =
-    normalizeHttpUrl(routeState?.githubFileUrl) ||
-    normalizeHttpUrl(cachedCheckEvidence?.githubFileUrl)
+    normalizeGithubEvidenceUrl(cachedCheckEvidence?.githubFileUrl) ||
+    normalizeGithubEvidenceUrl(routeState?.githubFileUrl)
   const githubFolderUrlCandidate =
-    normalizeHttpUrl(routeState?.githubFolderUrl) ||
-    normalizeHttpUrl(cachedCheckEvidence?.githubFolderUrl)
+    normalizeGithubEvidenceUrl(cachedCheckEvidence?.githubFolderUrl) ||
+    normalizeGithubEvidenceUrl(routeState?.githubFolderUrl)
 
   return {
     status: routeStatus || cachedStatus,

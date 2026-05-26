@@ -97,9 +97,9 @@ describe('ScansService', () => {
   it('should return results, evidence packet, and ai review from the full scan flow', async () => {
     const rawSecret = 'AlphaBetaGammaDelta1234567890';
     const mockFileContent = [
-      'import cors from "cors";',
+      'import { NestFactory } from "@nestjs/core";',
       `const apiKey = "${rawSecret}";`,
-      'app.use(cors({ origin: "*" }));',
+      'app.enableCors({ origin: "*" });',
       'await app.listen(port);',
     ].join('\n');
 
@@ -239,7 +239,7 @@ describe('ScansService', () => {
     expect(permissiveCorsFinding?.flaggedLineNumber).toBe(3);
     expect(permissiveCorsFinding?.flaggedLinePointer).toContain('^');
     expect(permissiveCorsFinding?.flaggedLineExplanation).toEqual(
-      'This CORS configuration may allow broader origin access than intended.',
+      'This is the CORS configuration RepoGuard flagged for review.',
     );
     expect(permissiveCorsFinding?.githubFileUrl).toBe(
       'https://github.com/RepoOwner/RepoName/blob/main/backend/src/main.ts#L3',
@@ -255,7 +255,7 @@ describe('ScansService', () => {
     ).toEqual(
       expect.objectContaining({
         lineNumber: 3,
-        content: 'app.use(cors({ origin: "*" }));',
+        content: 'app.enableCors({ origin: "*" });',
       }),
     );
     expect(
@@ -290,5 +290,90 @@ describe('ScansService', () => {
         }),
       ]),
     );
+  });
+
+  it('should flag app.enableCors() default usage with review evidence context', async () => {
+    const mockFileContent = [
+      'const app = await NestFactory.create(AppModule);',
+      'app.enableCors();',
+      'await app.listen(port);',
+    ].join('\n');
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (
+        url.includes('https://api.github.com/repos/RepoOwner/RepoName') &&
+        !url.includes('/git/trees/')
+      ) {
+        return toJsonResponse({
+          default_branch: 'main',
+          pushed_at: '2026-05-26T00:00:00.000Z',
+        });
+      }
+
+      if (
+        url.includes(
+          'https://api.github.com/repos/RepoOwner/RepoName/git/trees/main?recursive=1',
+        )
+      ) {
+        return toJsonResponse({
+          tree: [{ path: 'backend/src/main.ts' }],
+        });
+      }
+
+      if (
+        url.includes('https://api.github.com/search/issues') &&
+        url.includes('is:issue')
+      ) {
+        return toJsonResponse({ total_count: 1 });
+      }
+
+      if (
+        url.includes('https://api.github.com/search/issues') &&
+        url.includes('is:pr')
+      ) {
+        return toJsonResponse({ total_count: 1 });
+      }
+
+      if (url.includes('https://raw.githubusercontent.com/')) {
+        return toTextResponse(mockFileContent);
+      }
+
+      throw new Error(`Unexpected fetch URL in test: ${url}`);
+    });
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const response = await scansService.runScan(
+      'https://github.com/RepoOwner/RepoName',
+      ['security_basics'],
+    );
+
+    const securityBasics = response.results.find(
+      (result) => result.checklist === 'security_basics',
+    );
+    const permissiveCorsItem = securityBasics?.items.find(
+      (item) => item.label === 'Permissive CORS configuration',
+    );
+
+    expect(permissiveCorsItem).toBeDefined();
+    expect(permissiveCorsItem?.status).toBe('fail');
+    expect(permissiveCorsItem?.details).toBe('CORS configuration may need review.');
+    expect(permissiveCorsItem?.filePath).toBe('backend/src/main.ts');
+    expect(permissiveCorsItem?.lineNumber).toBe(2);
+    expect(permissiveCorsItem?.codeContext?.length).toBeGreaterThan(0);
+    expect(permissiveCorsItem?.codeContext?.length).toBeLessThanOrEqual(12);
+    expect(permissiveCorsItem?.flaggedLineNumber).toBe(2);
+    expect(permissiveCorsItem?.flaggedLinePointer).toContain('^');
+    expect(permissiveCorsItem?.flaggedLineExplanation).toBe(
+      'This is the CORS configuration RepoGuard flagged for review.',
+    );
+    expect(permissiveCorsItem?.githubFileUrl).toBe(
+      'https://github.com/RepoOwner/RepoName/blob/main/backend/src/main.ts#L2',
+    );
+    expect(
+      permissiveCorsItem?.codeContext?.some((line) => line.isFlaggedLine),
+    ).toBe(true);
   });
 });

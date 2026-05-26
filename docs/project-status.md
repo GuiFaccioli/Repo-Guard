@@ -35,9 +35,14 @@ This document tracks implementation progress, current milestone focus, and the n
   - `red` scan for defensive security pattern detection
   - red scan reports potential risks only (no exploitation behavior)
 - Frontend deployed to Vercel with monorepo settings using `frontend/` as root directory.
+- Production integration validated:
+  - frontend running on Vercel and backend running on Render
+  - GitHub OAuth redirect and callback working in production
+  - `/auth/me` hydration working in production
+  - production repository listing and scan execution working
 
 ## Current Milestone
-Green/Yellow/Red scan execution and preparation for scan history persistence.
+Scan history persistence and analytics preparation after stable production OAuth integration.
 
 ## Next Milestones
 1. Add Prisma + PostgreSQL persistence for scan history.

@@ -639,6 +639,73 @@ a {
   word-break: break-word;
 }
 
+.repository-guide-reviewed-code {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: #0d1117;
+  padding: 0.72rem 0.72rem 0.66rem;
+  display: grid;
+  gap: 0.24rem;
+}
+
+.repository-guide-context-group {
+  display: grid;
+  gap: 0.14rem;
+}
+
+.repository-guide-context-line {
+  display: grid;
+  grid-template-columns: 3.3rem minmax(0, 1fr);
+  gap: 0.62rem;
+  align-items: baseline;
+  border-radius: 0.45rem;
+  padding: 0.12rem 0.3rem;
+}
+
+.repository-guide-context-line-flagged {
+  background: rgba(255, 201, 197, 0.08);
+  border: 1px solid rgba(255, 201, 197, 0.24);
+}
+
+.repository-guide-context-line-number {
+  color: var(--text-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 0.78rem;
+  text-align: right;
+  user-select: none;
+}
+
+.repository-guide-context-line-content {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.repository-guide-context-annotation {
+  display: grid;
+  gap: 0.08rem;
+  padding-left: calc(3.3rem + 0.62rem);
+}
+
+.repository-guide-context-pointer {
+  color: #ffc9c5;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 0.77rem;
+  line-height: 1.3;
+  white-space: pre;
+  overflow-x: auto;
+}
+
+.repository-guide-context-explanation {
+  color: #f4d5d2;
+  font-size: 0.8rem;
+  line-height: 1.38;
+}
+
 .repository-guide-evidence-link {
   justify-self: start;
   margin-top: 0.24rem;

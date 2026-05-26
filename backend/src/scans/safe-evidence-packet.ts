@@ -1,6 +1,7 @@
 import {
   ParsedRepositoryTarget,
   SafeEvidenceCategory,
+  SafeEvidenceCodeContextLine,
   SafeEvidenceFinding,
   SafeEvidencePacket,
   SafeEvidenceScanType,
@@ -17,6 +18,10 @@ interface BuildSafeEvidencePacketInput {
 }
 
 const MAX_SAFE_EXCERPT_LENGTH = 200;
+const MAX_SAFE_CODE_CONTEXT_LINES = 12;
+const MAX_SAFE_CODE_CONTEXT_LINE_LENGTH = 120;
+const MAX_FLAGGED_POINTER_LENGTH = 100;
+const MAX_FLAGGED_EXPLANATION_LENGTH = 220;
 
 const CHECK_ID_BY_LABEL_TOKEN: Record<string, string> = {
   readmeexists: 'readme',
@@ -113,6 +118,27 @@ function buildFindings(
         item.status,
         item.codeExcerpt,
       );
+      const codeContext = buildSafeCodeContext(
+        checkId,
+        item.status,
+        item.codeContext,
+      );
+      const flaggedLineNumber = buildSafeFlaggedLineNumber(
+        checkId,
+        item.status,
+        item.flaggedLineNumber ?? item.lineNumber,
+        codeContext || undefined,
+      );
+      const flaggedLinePointer = buildSafeFlaggedLinePointer(
+        checkId,
+        item.status,
+        item.flaggedLinePointer,
+      );
+      const flaggedLineExplanation = buildSafeFlaggedLineExplanation(
+        checkId,
+        item.status,
+        item.flaggedLineExplanation,
+      );
       const githubFileUrl = sanitizeGithubNavigationUrl(
         repository.provider,
         item.githubFileUrl,
@@ -131,6 +157,10 @@ function buildFindings(
         filePath: filePath || undefined,
         lineNumber: lineNumber || undefined,
         safeExcerpt: safeExcerpt || undefined,
+        codeContext: codeContext || undefined,
+        flaggedLineNumber: flaggedLineNumber || undefined,
+        flaggedLinePointer: flaggedLinePointer || undefined,
+        flaggedLineExplanation: flaggedLineExplanation || undefined,
         githubFileUrl: githubFileUrl || undefined,
         githubFolderUrl: githubFolderUrl || undefined,
         recommendationKey,
@@ -176,6 +206,122 @@ function buildSafeExcerpt(
   return clampText(maskedExcerpt, MAX_SAFE_EXCERPT_LENGTH);
 }
 
+function buildSafeCodeContext(
+  checkId: string | null,
+  status: ScanItemStatus,
+  codeContextInput?: SafeEvidenceCodeContextLine[],
+): SafeEvidenceCodeContextLine[] | null {
+  if (checkId === 'committed-env-file' && status === 'fail') {
+    return null;
+  }
+
+  if (!Array.isArray(codeContextInput) || !codeContextInput.length) {
+    return null;
+  }
+
+  const sanitizedContext: SafeEvidenceCodeContextLine[] = [];
+  for (const rawLine of codeContextInput.slice(0, MAX_SAFE_CODE_CONTEXT_LINES)) {
+    if (!rawLine || typeof rawLine !== 'object') {
+      continue;
+    }
+
+    const lineNumber = sanitizeLineNumber(rawLine.lineNumber);
+    if (!lineNumber) {
+      continue;
+    }
+
+    const normalizedContent = normalizeCodeContextLine(rawLine.content);
+    if (normalizedContent === null) {
+      continue;
+    }
+
+    const maskedContent = maskSensitiveLiterals(normalizedContent);
+    sanitizedContext.push({
+      lineNumber,
+      content: maskedContent,
+      isFlaggedLine: rawLine.isFlaggedLine ? true : undefined,
+    });
+  }
+
+  return sanitizedContext.length ? sanitizedContext : null;
+}
+
+function buildSafeFlaggedLineNumber(
+  checkId: string | null,
+  status: ScanItemStatus,
+  flaggedLineNumberInput?: number,
+  codeContext?: SafeEvidenceCodeContextLine[],
+): number | null {
+  if (checkId === 'committed-env-file' && status === 'fail') {
+    return null;
+  }
+
+  const flaggedLineNumber = sanitizeLineNumber(flaggedLineNumberInput);
+  if (!flaggedLineNumber) {
+    return null;
+  }
+
+  if (!Array.isArray(codeContext) || !codeContext.length) {
+    return flaggedLineNumber;
+  }
+
+  const lineExistsInContext = codeContext.some(
+    (line) => line.lineNumber === flaggedLineNumber,
+  );
+  if (lineExistsInContext) {
+    return flaggedLineNumber;
+  }
+
+  const explicitFlaggedLine = codeContext.find((line) => line.isFlaggedLine);
+  return explicitFlaggedLine ? explicitFlaggedLine.lineNumber : null;
+}
+
+function buildSafeFlaggedLinePointer(
+  checkId: string | null,
+  status: ScanItemStatus,
+  pointerInput?: string,
+): string | null {
+  if (checkId === 'committed-env-file' && status === 'fail') {
+    return null;
+  }
+
+  if (typeof pointerInput !== 'string' || !pointerInput.trim()) {
+    return null;
+  }
+
+  const normalizedPointer = pointerInput
+    .replace(/[\u0000-\u001f\u007f]/g, '')
+    .replace(/[^\s\^\-\~|]/g, '')
+    .trimEnd();
+
+  if (!normalizedPointer) {
+    return null;
+  }
+
+  return clampText(normalizedPointer, MAX_FLAGGED_POINTER_LENGTH);
+}
+
+function buildSafeFlaggedLineExplanation(
+  checkId: string | null,
+  status: ScanItemStatus,
+  explanationInput?: string,
+): string | null {
+  if (checkId === 'committed-env-file' && status === 'fail') {
+    return null;
+  }
+
+  if (typeof explanationInput !== 'string' || !explanationInput.trim()) {
+    return null;
+  }
+
+  const normalizedExplanation = explanationInput.replace(/\s+/g, ' ').trim();
+  if (!normalizedExplanation) {
+    return null;
+  }
+
+  return clampText(normalizedExplanation, MAX_FLAGGED_EXPLANATION_LENGTH);
+}
+
 function maskSensitiveLiterals(value: string): string {
   const withMaskedAssignments = value.replace(
     SECRET_LITERAL_PATTERN,
@@ -187,6 +333,27 @@ function maskSensitiveLiterals(value: string): string {
     HIGH_ENTROPY_TOKEN_PATTERN,
     (token) => maskToken(token),
   );
+}
+
+function normalizeCodeContextLine(lineInput?: string): string | null {
+  if (typeof lineInput !== 'string') {
+    return null;
+  }
+
+  const normalizedLine = lineInput
+    .replace(/\r/g, '')
+    .replace(/\t/g, '  ')
+    .trimEnd();
+
+  if (!normalizedLine && normalizedLine !== '') {
+    return null;
+  }
+
+  if (normalizedLine.length <= MAX_SAFE_CODE_CONTEXT_LINE_LENGTH) {
+    return normalizedLine;
+  }
+
+  return `${normalizedLine.slice(0, MAX_SAFE_CODE_CONTEXT_LINE_LENGTH - 3)}...`;
 }
 
 function maskToken(value: string): string {

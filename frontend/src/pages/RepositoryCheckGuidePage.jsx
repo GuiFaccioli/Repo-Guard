@@ -30,6 +30,42 @@ function normalizeHttpUrl(value) {
     : null
 }
 
+function normalizeSafeCodeContextLines(codeContextInput) {
+  if (!Array.isArray(codeContextInput)) {
+    return null
+  }
+
+  const normalizedLines = codeContextInput
+    .slice(0, 12)
+    .map((line) => {
+      if (!line || typeof line !== 'object') {
+        return null
+      }
+
+      const lineNumber =
+        Number.isFinite(line.lineNumber) && Number(line.lineNumber) > 0
+          ? Math.floor(Number(line.lineNumber))
+          : null
+      const content =
+        typeof line.content === 'string'
+          ? line.content.replace(/\r/g, '').slice(0, 120)
+          : ''
+
+      if (!lineNumber) {
+        return null
+      }
+
+      return {
+        lineNumber,
+        content,
+        isFlaggedLine: line.isFlaggedLine ? true : undefined,
+      }
+    })
+    .filter(Boolean)
+
+  return normalizedLines.length ? normalizedLines : null
+}
+
 function resolveSafeEvidence(routeRepositoryId, checkId, routeState) {
   const cache = readJsonStorage(SAFE_SCAN_EVIDENCE_CACHE_KEY, {})
   const repositories =
@@ -74,6 +110,31 @@ function resolveSafeEvidence(routeRepositoryId, checkId, routeState) {
           cachedCheckEvidence.codeExcerpt.trim()
         ? cachedCheckEvidence.codeExcerpt.trim()
         : null
+  const codeContextCandidate =
+    normalizeSafeCodeContextLines(routeState?.codeContext) ||
+    normalizeSafeCodeContextLines(cachedCheckEvidence?.codeContext)
+  const flaggedLineNumberCandidate =
+    Number.isFinite(routeState?.flaggedLineNumber) && Number(routeState.flaggedLineNumber) > 0
+      ? Math.floor(Number(routeState.flaggedLineNumber))
+      : Number.isFinite(cachedCheckEvidence?.flaggedLineNumber) &&
+          Number(cachedCheckEvidence.flaggedLineNumber) > 0
+        ? Math.floor(Number(cachedCheckEvidence.flaggedLineNumber))
+        : null
+  const flaggedLinePointerCandidate =
+    typeof routeState?.flaggedLinePointer === 'string' && routeState.flaggedLinePointer.trim()
+      ? routeState.flaggedLinePointer.trimEnd().slice(0, 100)
+      : typeof cachedCheckEvidence?.flaggedLinePointer === 'string' &&
+          cachedCheckEvidence.flaggedLinePointer.trim()
+        ? cachedCheckEvidence.flaggedLinePointer.trimEnd().slice(0, 100)
+        : null
+  const flaggedLineExplanationCandidate =
+    typeof routeState?.flaggedLineExplanation === 'string' &&
+    routeState.flaggedLineExplanation.trim()
+      ? routeState.flaggedLineExplanation.trim().slice(0, 220)
+      : typeof cachedCheckEvidence?.flaggedLineExplanation === 'string' &&
+          cachedCheckEvidence.flaggedLineExplanation.trim()
+        ? cachedCheckEvidence.flaggedLineExplanation.trim().slice(0, 220)
+        : null
 
   const filePathCandidate =
     typeof routeState?.filePath === 'string' && routeState.filePath.trim()
@@ -102,6 +163,10 @@ function resolveSafeEvidence(routeRepositoryId, checkId, routeState) {
     filePath: filePathCandidate,
     lineNumber: lineNumberCandidate,
     codeExcerpt: codeExcerptCandidate ? codeExcerptCandidate.slice(0, 220) : null,
+    codeContext: codeContextCandidate,
+    flaggedLineNumber: flaggedLineNumberCandidate,
+    flaggedLinePointer: flaggedLinePointerCandidate,
+    flaggedLineExplanation: flaggedLineExplanationCandidate,
     details: detailsCandidate,
     githubFileUrl: githubFileUrlCandidate,
     githubFolderUrl: githubFolderUrlCandidate,
@@ -202,6 +267,45 @@ function RepositoryCheckGuidePage() {
     return safeExample
   }, [guide, safeExample])
 
+  const reviewedCodeContext = useMemo(
+    () => (Array.isArray(safeEvidence.codeContext) ? safeEvidence.codeContext : []),
+    [safeEvidence.codeContext],
+  )
+
+  const reviewedCodeExcerpt = useMemo(
+    () => (safeEvidence.codeExcerpt ? safeEvidence.codeExcerpt : ''),
+    [safeEvidence.codeExcerpt],
+  )
+
+  const flaggedLineNumber = useMemo(() => {
+    if (Number.isFinite(safeEvidence.flaggedLineNumber) && Number(safeEvidence.flaggedLineNumber) > 0) {
+      return Math.floor(Number(safeEvidence.flaggedLineNumber))
+    }
+
+    if (Number.isFinite(safeEvidence.lineNumber) && Number(safeEvidence.lineNumber) > 0) {
+      return Math.floor(Number(safeEvidence.lineNumber))
+    }
+
+    return null
+  }, [safeEvidence.flaggedLineNumber, safeEvidence.lineNumber])
+
+  const flaggedLinePointer = useMemo(
+    () =>
+      typeof safeEvidence.flaggedLinePointer === 'string' && safeEvidence.flaggedLinePointer.trim()
+        ? safeEvidence.flaggedLinePointer.trimEnd()
+        : '',
+    [safeEvidence.flaggedLinePointer],
+  )
+
+  const flaggedLineExplanation = useMemo(
+    () =>
+      typeof safeEvidence.flaggedLineExplanation === 'string' &&
+      safeEvidence.flaggedLineExplanation.trim()
+        ? safeEvidence.flaggedLineExplanation.trim()
+        : '',
+    [safeEvidence.flaggedLineExplanation],
+  )
+
   const evidenceCodeSnippet = useMemo(() => {
     if (safeEvidence.codeExcerpt) {
       return safeEvidence.codeExcerpt
@@ -209,18 +313,6 @@ function RepositoryCheckGuidePage() {
 
     return ''
   }, [safeEvidence.codeExcerpt])
-
-  const failedCurrentPatternSnippet = useMemo(() => {
-    if (safeEvidence.codeExcerpt) {
-      return safeEvidence.codeExcerpt
-    }
-
-    if (typeof guide?.currentPattern === 'string' && guide.currentPattern.trim()) {
-      return guide.currentPattern.trim()
-    }
-
-    return ''
-  }, [guide, safeEvidence.codeExcerpt])
 
   const recommendedPatternSnippet = useMemo(() => {
     if (typeof guide?.recommendedPattern === 'string' && guide.recommendedPattern.trim()) {
@@ -434,10 +526,46 @@ function RepositoryCheckGuidePage() {
             </section>
 
             <section className="repository-guide-section repository-guide-section-card">
-              <h3>Current code pattern</h3>
-              {failedCurrentPatternSnippet ? (
+              <h3>Code section reviewed</h3>
+              {reviewedCodeContext.length ? (
+                <div className="repository-guide-reviewed-code">
+                  {reviewedCodeContext.map((line) => {
+                    const isFlaggedLine =
+                      line.isFlaggedLine ||
+                      (flaggedLineNumber && line.lineNumber === flaggedLineNumber)
+
+                    return (
+                      <div key={`${line.lineNumber}-${line.content}`} className="repository-guide-context-group">
+                        <div
+                          className={`repository-guide-context-line ${
+                            isFlaggedLine ? 'repository-guide-context-line-flagged' : ''
+                          }`.trim()}
+                        >
+                          <span className="repository-guide-context-line-number">{line.lineNumber}</span>
+                          <code className="repository-guide-context-line-content">
+                            {line.content || ' '}
+                          </code>
+                        </div>
+
+                        {isFlaggedLine ? (
+                          <div className="repository-guide-context-annotation">
+                            {flaggedLinePointer ? (
+                              <code className="repository-guide-context-pointer">
+                                {flaggedLinePointer}
+                              </code>
+                            ) : null}
+                            <p className="repository-guide-context-explanation">
+                              {flaggedLineExplanation || 'This is the pattern RepoGuard flagged.'}
+                            </p>
+                          </div>
+                        ) : null}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : reviewedCodeExcerpt ? (
                 <pre className="repository-guide-code-block">
-                  <code>{failedCurrentPatternSnippet}</code>
+                  <code>{reviewedCodeExcerpt}</code>
                 </pre>
               ) : (
                 <p>RepoGuard found this signal, but no safe code excerpt is available.</p>
@@ -445,32 +573,32 @@ function RepositoryCheckGuidePage() {
             </section>
 
             <section className="repository-guide-section repository-guide-section-card">
-              <h3>Recommended pattern</h3>
-              {recommendedPatternSnippet ? (
-                <pre className="repository-guide-code-block">
-                  <code>{recommendedPatternSnippet}</code>
-                </pre>
-              ) : (
-                <p>Review the safer direction below for a recommended implementation.</p>
-              )}
-            </section>
-
-            <section className="repository-guide-section repository-guide-section-card">
-              <h3>What is wrong here?</h3>
+              <h3>What exactly looks fragile here?</h3>
               <p>{whatIsWrongSummary || guide.shortDescription}</p>
               {guide.whyMatters ? <p>{guide.whyMatters}</p> : null}
             </section>
 
+            <section className="repository-guide-section repository-guide-section-card">
+              <h3>Safer direction</h3>
+              <p>{saferDirectionSummary}</p>
+              {recommendedPatternSnippet ? (
+                <pre className="repository-guide-code-block">
+                  <code>{recommendedPatternSnippet}</code>
+                </pre>
+              ) : null}
+            </section>
+
             <section className="repository-guide-section repository-guide-section-card" id="how-to-fix">
               <h3>How to improve</h3>
-              <p>{saferDirectionSummary}</p>
               {saferDirectionSteps.length ? (
                 <ol className="scan-numbered-list repository-guide-steps">
                   {saferDirectionSteps.map((step) => (
                     <li key={step}>{step}</li>
                   ))}
                 </ol>
-              ) : null}
+              ) : (
+                <p>Review the safer direction above and apply it to this code path.</p>
+              )}
             </section>
           </>
         ) : (

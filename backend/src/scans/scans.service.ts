@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   ParsedRepositoryTarget,
+  SafeEvidenceCodeContextLine,
   SafeEvidencePacket,
   ScanChecklistId,
   ScanChecklistItem,
@@ -127,6 +128,17 @@ const PULL_REQUEST_THRESHOLD = 10;
 const RECENT_ACTIVITY_DAYS = 90;
 const MAX_SECURITY_SAMPLES = 64;
 const MAX_EVIDENCE_LINE_LENGTH = 200;
+const MAX_CODE_CONTEXT_LINES = 12;
+const CODE_CONTEXT_LINES_BEFORE = 3;
+const CODE_CONTEXT_LINES_AFTER = 3;
+const MAX_CODE_CONTEXT_LINE_LENGTH = 120;
+const MAX_POINTER_SPACING = 48;
+const MAX_POINTER_LENGTH = 72;
+
+const SECRET_LITERAL_MASK_PATTERN =
+  /((?:api[_-]?key|token|secret|password|jwt[_-]?secret|client[_-]?secret)[\w$ \t]{0,32}[:=]\s*['"`])([^'"`\n]{6,})(['"`])/gi;
+const HIGH_ENTROPY_TOKEN_MASK_PATTERN =
+  /\b(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk_(?:live|test)_[A-Za-z0-9]{12,}|AKIA[0-9A-Z]{8,}|AIza[0-9A-Za-z_-]{12,})\b/g;
 
 @Injectable()
 export class ScansService {
@@ -655,6 +667,8 @@ export class ScansService {
               hardcodedSecretMatch,
               target,
               defaultBranch,
+              'hardcoded-secret',
+              codeSamples,
             ),
           }
         : {
@@ -695,7 +709,13 @@ export class ScansService {
             label: 'SQL query built with string concatenation',
             status: 'fail',
             details: 'SQL query appears to be built with dynamic string content.',
-            ...this.buildEvidenceItem(sqlConcatMatch, target, defaultBranch),
+            ...this.buildEvidenceItem(
+              sqlConcatMatch,
+              target,
+              defaultBranch,
+              'sql-string-concatenation',
+              codeSamples,
+            ),
           }
         : {
             label: 'SQL query built with string concatenation',
@@ -712,7 +732,13 @@ export class ScansService {
             label: 'No eval usage detected',
             status: 'fail',
             details: 'Dynamic code execution pattern detected.',
-            ...this.buildEvidenceItem(evalMatch, target, defaultBranch),
+            ...this.buildEvidenceItem(
+              evalMatch,
+              target,
+              defaultBranch,
+              'eval-usage',
+              codeSamples,
+            ),
           }
         : {
             label: 'No eval usage detected',
@@ -734,14 +760,26 @@ export class ScansService {
         label: 'Permissive CORS configuration',
         status: 'fail',
         details: 'API may be accepting requests from any origin.',
-        ...this.buildEvidenceItem(wildcardCorsMatch, target, defaultBranch),
+        ...this.buildEvidenceItem(
+          wildcardCorsMatch,
+          target,
+          defaultBranch,
+          'permissive-cors',
+          codeSamples,
+        ),
       });
     } else if (defaultCorsMatch) {
       items.push({
         label: 'Permissive CORS configuration',
         status: 'fail',
         details: 'CORS configuration may need review.',
-        ...this.buildEvidenceItem(defaultCorsMatch, target, defaultBranch),
+        ...this.buildEvidenceItem(
+          defaultCorsMatch,
+          target,
+          defaultBranch,
+          'permissive-cors',
+          codeSamples,
+        ),
       });
     } else {
       items.push({
@@ -775,10 +813,16 @@ export class ScansService {
     match: PatternMatch | null,
     target: ParsedRepositoryTarget,
     defaultBranch: string,
+    checkId: 'hardcoded-secret' | 'sql-string-concatenation' | 'eval-usage' | 'permissive-cors',
+    codeSamples: Array<{ path: string; content: string }>,
   ): {
     filePath?: string;
     lineNumber?: number;
     codeExcerpt?: string;
+    codeContext?: SafeEvidenceCodeContextLine[];
+    flaggedLineNumber?: number;
+    flaggedLinePointer?: string;
+    flaggedLineExplanation?: string;
     githubFileUrl?: string;
     githubFolderUrl?: string;
   } {
@@ -806,8 +850,26 @@ export class ScansService {
       evidence.codeExcerpt = this.clampEvidenceLine(match.codeExcerpt);
     }
 
+    const sourceContent = this.resolveSampleContentByPath(
+      codeSamples,
+      evidence.filePath,
+    );
+    const codeContext = sourceContent
+      ? this.buildCodeContext(sourceContent, evidence.lineNumber)
+      : [];
+    const flaggedLine = codeContext.find((line) => line.isFlaggedLine)?.content || '';
+    const flaggedLinePointer = this.buildFlaggedLinePointer(
+      flaggedLine,
+      evidence.codeExcerpt,
+    );
+    const flaggedLineExplanation = this.buildFlaggedLineExplanation(checkId);
+
     return {
       ...evidence,
+      codeContext: codeContext.length ? codeContext : undefined,
+      flaggedLineNumber: evidence.lineNumber || undefined,
+      flaggedLinePointer: flaggedLinePointer || undefined,
+      flaggedLineExplanation: flaggedLineExplanation || undefined,
       ...this.buildEvidenceNavigation(
         target,
         defaultBranch,
@@ -815,6 +877,134 @@ export class ScansService {
         evidence.lineNumber,
       ),
     };
+  }
+
+  private resolveSampleContentByPath(
+    codeSamples: Array<{ path: string; content: string }>,
+    filePath?: string,
+  ): string | null {
+    if (!filePath) {
+      return null;
+    }
+
+    const normalizedFilePath = this.normalizePath(filePath);
+    const matchedSample = codeSamples.find(
+      (sample) => this.normalizePath(sample.path) === normalizedFilePath,
+    );
+
+    if (!matchedSample || typeof matchedSample.content !== 'string') {
+      return null;
+    }
+
+    return matchedSample.content;
+  }
+
+  private buildCodeContext(
+    sourceContent: string,
+    flaggedLineNumber?: number,
+  ): SafeEvidenceCodeContextLine[] {
+    if (
+      typeof sourceContent !== 'string' ||
+      !sourceContent ||
+      !Number.isFinite(flaggedLineNumber) ||
+      Number(flaggedLineNumber) <= 0
+    ) {
+      return [];
+    }
+
+    const lines = sourceContent.split(/\r?\n/);
+    if (!lines.length) {
+      return [];
+    }
+
+    const safeFlaggedLine = Math.floor(Number(flaggedLineNumber));
+    if (safeFlaggedLine > lines.length) {
+      return [];
+    }
+
+    let startLine = Math.max(1, safeFlaggedLine - CODE_CONTEXT_LINES_BEFORE);
+    let endLine = Math.min(lines.length, safeFlaggedLine + CODE_CONTEXT_LINES_AFTER);
+
+    if (startLine === 1 && endLine === lines.length) {
+      startLine = safeFlaggedLine;
+      endLine = safeFlaggedLine;
+    }
+
+    const context: SafeEvidenceCodeContextLine[] = [];
+    for (
+      let currentLine = startLine;
+      currentLine <= endLine && context.length < MAX_CODE_CONTEXT_LINES;
+      currentLine += 1
+    ) {
+      const rawContent = lines[currentLine - 1] || '';
+      const normalizedContent = this.normalizeCodeContextLine(rawContent);
+
+      context.push({
+        lineNumber: currentLine,
+        content: this.maskSensitiveLiterals(normalizedContent),
+        isFlaggedLine: currentLine === safeFlaggedLine ? true : undefined,
+      });
+    }
+
+    return context;
+  }
+
+  private normalizeCodeContextLine(lineInput: string): string {
+    const normalizedLine = String(lineInput || '')
+      .replace(/\r/g, '')
+      .replace(/\t/g, '  ')
+      .trimEnd();
+
+    if (normalizedLine.length <= MAX_CODE_CONTEXT_LINE_LENGTH) {
+      return normalizedLine;
+    }
+
+    return `${normalizedLine.slice(0, MAX_CODE_CONTEXT_LINE_LENGTH - 3)}...`;
+  }
+
+  private buildFlaggedLinePointer(
+    flaggedLineContent: string,
+    codeExcerpt?: string,
+  ): string {
+    const line = String(flaggedLineContent || '');
+    const excerpt = String(codeExcerpt || '').trim();
+    if (!line.trim()) {
+      return '';
+    }
+
+    const snippet = excerpt && line.includes(excerpt) ? excerpt : line.trim();
+    if (!snippet) {
+      return '';
+    }
+
+    const snippetStart = Math.max(0, line.indexOf(snippet));
+    const spacing = Math.min(MAX_POINTER_SPACING, snippetStart);
+    const pointerLength = Math.min(
+      MAX_POINTER_LENGTH,
+      Math.max(3, snippet.length),
+    );
+
+    return `${' '.repeat(spacing)}${'^'.repeat(pointerLength)}`;
+  }
+
+  private buildFlaggedLineExplanation(checkId: string): string {
+    if (checkId === 'hardcoded-secret') {
+      return 'This assignment contains a secret-like value in source code.';
+    }
+
+    if (checkId === 'sql-string-concatenation') {
+      return 'This line builds SQL text with dynamic string content.';
+    }
+
+    if (checkId === 'eval-usage') {
+      return 'This line uses dynamic code execution.';
+    }
+
+    if (checkId === 'permissive-cors') {
+      return 'This CORS configuration may allow broader origin access than intended.';
+    }
+
+    return 'This is the pattern RepoGuard flagged.';
   }
 
   private buildEvidenceNavigation(
@@ -1045,6 +1235,19 @@ export class ScansService {
     const visiblePrefixLength = Math.min(4, normalizedValue.length);
     const visiblePrefix = normalizedValue.slice(0, visiblePrefixLength);
     return `${visiblePrefix}********`;
+  }
+
+  private maskSensitiveLiterals(value: string): string {
+    const withMaskedAssignments = String(value || '').replace(
+      SECRET_LITERAL_MASK_PATTERN,
+      (_, prefix: string, secretValue: string, suffix: string) =>
+        `${prefix}${this.maskSecretValue(secretValue)}${suffix}`,
+    );
+
+    return withMaskedAssignments.replace(
+      HIGH_ENTROPY_TOKEN_MASK_PATTERN,
+      (token) => this.maskSecretValue(token),
+    );
   }
 
   private clampEvidenceLine(line: string): string {

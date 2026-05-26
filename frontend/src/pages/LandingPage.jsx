@@ -59,6 +59,42 @@ function writeJsonStorage(key, value) {
   }
 }
 
+function normalizeCodeContext(codeContextInput) {
+  if (!Array.isArray(codeContextInput)) {
+    return null
+  }
+
+  const normalizedContext = codeContextInput
+    .slice(0, 12)
+    .map((line) => {
+      if (!line || typeof line !== 'object') {
+        return null
+      }
+
+      const lineNumber =
+        Number.isFinite(line.lineNumber) && Number(line.lineNumber) > 0
+          ? Math.floor(Number(line.lineNumber))
+          : null
+      const content =
+        typeof line.content === 'string'
+          ? line.content.replace(/\r/g, '').slice(0, 120)
+          : ''
+
+      if (!lineNumber) {
+        return null
+      }
+
+      return {
+        lineNumber,
+        content,
+        isFlaggedLine: line.isFlaggedLine ? true : undefined,
+      }
+    })
+    .filter(Boolean)
+
+  return normalizedContext.length ? normalizedContext : null
+}
+
 function buildGuideRouteRepositoryId(repository) {
   const provider = typeof repository?.provider === 'string' ? repository.provider.trim() : ''
   const owner = typeof repository?.owner === 'string' ? repository.owner.trim() : ''
@@ -140,10 +176,75 @@ function LandingPage() {
       return
     }
 
+    const repositoryEvidenceChecks = {}
+    const evidencePacketFindings = Array.isArray(scanState.result?.evidencePacket?.findings)
+      ? scanState.result.evidencePacket.findings
+      : []
+
+    for (const finding of evidencePacketFindings) {
+      const directCheckId =
+        typeof finding?.checkId === 'string' ? finding.checkId.trim() : ''
+      const resolvedCheckId =
+        directCheckId && CODE_SAFETY_CHECK_IDS.has(directCheckId)
+          ? directCheckId
+          : resolveRepositoryCheckId({
+              label: finding?.title,
+            })
+
+      if (!resolvedCheckId || !CODE_SAFETY_CHECK_IDS.has(resolvedCheckId)) {
+        continue
+      }
+
+      const safeEvidence = {
+        checklist: 'security_basics',
+        checkId: resolvedCheckId,
+        label: typeof finding?.title === 'string' ? finding.title : '',
+        status: finding?.status === 'pass' ? 'pass' : 'fail',
+        details: typeof finding?.summary === 'string' ? finding.summary : '',
+        filePath:
+          typeof finding?.filePath === 'string' && finding.filePath.trim()
+            ? finding.filePath.trim()
+            : null,
+        lineNumber:
+          Number.isFinite(finding?.lineNumber) && Number(finding.lineNumber) > 0
+            ? Math.floor(Number(finding.lineNumber))
+            : null,
+        codeExcerpt:
+          typeof finding?.safeExcerpt === 'string' && finding.safeExcerpt.trim()
+            ? finding.safeExcerpt.trim().slice(0, 220)
+            : null,
+        codeContext: normalizeCodeContext(finding?.codeContext),
+        flaggedLineNumber:
+          Number.isFinite(finding?.flaggedLineNumber) &&
+          Number(finding.flaggedLineNumber) > 0
+            ? Math.floor(Number(finding.flaggedLineNumber))
+            : null,
+        flaggedLinePointer:
+          typeof finding?.flaggedLinePointer === 'string' &&
+          finding.flaggedLinePointer.trim()
+            ? finding.flaggedLinePointer.trimEnd().slice(0, 100)
+            : null,
+        flaggedLineExplanation:
+          typeof finding?.flaggedLineExplanation === 'string' &&
+          finding.flaggedLineExplanation.trim()
+            ? finding.flaggedLineExplanation.trim().slice(0, 220)
+            : null,
+        githubFileUrl:
+          typeof finding?.githubFileUrl === 'string' && finding.githubFileUrl.trim()
+            ? finding.githubFileUrl.trim()
+            : null,
+        githubFolderUrl:
+          typeof finding?.githubFolderUrl === 'string' && finding.githubFolderUrl.trim()
+            ? finding.githubFolderUrl.trim()
+            : null,
+      }
+
+      repositoryEvidenceChecks[resolvedCheckId] = safeEvidence
+    }
+
     const resultGroups = Array.isArray(scanState.result.results)
       ? scanState.result.results
       : []
-    const repositoryEvidenceChecks = {}
 
     for (const group of resultGroups) {
       if (group?.checklist !== 'security_basics' || !Array.isArray(group.items)) {
@@ -156,6 +257,10 @@ function LandingPage() {
         })
 
         if (!resolvedCheckId || !CODE_SAFETY_CHECK_IDS.has(resolvedCheckId)) {
+          continue
+        }
+
+        if (repositoryEvidenceChecks[resolvedCheckId]) {
           continue
         }
 
@@ -176,6 +281,20 @@ function LandingPage() {
           codeExcerpt:
             typeof item?.codeExcerpt === 'string' && item.codeExcerpt.trim()
               ? item.codeExcerpt.trim().slice(0, 220)
+              : null,
+          codeContext: normalizeCodeContext(item?.codeContext),
+          flaggedLineNumber:
+            Number.isFinite(item?.flaggedLineNumber) && Number(item.flaggedLineNumber) > 0
+              ? Math.floor(Number(item.flaggedLineNumber))
+              : null,
+          flaggedLinePointer:
+            typeof item?.flaggedLinePointer === 'string' && item.flaggedLinePointer.trim()
+              ? item.flaggedLinePointer.trimEnd().slice(0, 100)
+              : null,
+          flaggedLineExplanation:
+            typeof item?.flaggedLineExplanation === 'string' &&
+            item.flaggedLineExplanation.trim()
+              ? item.flaggedLineExplanation.trim().slice(0, 220)
               : null,
           githubFileUrl:
             typeof item?.githubFileUrl === 'string' && item.githubFileUrl.trim()
@@ -520,6 +639,22 @@ function LandingPage() {
                                   codeExcerpt:
                                     typeof item.codeExcerpt === 'string' && item.codeExcerpt.trim()
                                       ? item.codeExcerpt.trim().slice(0, 220)
+                                      : null,
+                                  codeContext: normalizeCodeContext(item?.codeContext),
+                                  flaggedLineNumber:
+                                    Number.isFinite(item?.flaggedLineNumber) &&
+                                    Number(item.flaggedLineNumber) > 0
+                                      ? Math.floor(Number(item.flaggedLineNumber))
+                                      : null,
+                                  flaggedLinePointer:
+                                    typeof item?.flaggedLinePointer === 'string' &&
+                                    item.flaggedLinePointer.trim()
+                                      ? item.flaggedLinePointer.trimEnd().slice(0, 100)
+                                      : null,
+                                  flaggedLineExplanation:
+                                    typeof item?.flaggedLineExplanation === 'string' &&
+                                    item.flaggedLineExplanation.trim()
+                                      ? item.flaggedLineExplanation.trim().slice(0, 220)
                                       : null,
                                   githubFileUrl:
                                     typeof item.githubFileUrl === 'string' &&

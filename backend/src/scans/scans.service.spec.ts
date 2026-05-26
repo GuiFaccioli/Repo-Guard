@@ -97,8 +97,10 @@ describe('ScansService', () => {
   it('should return results, evidence packet, and ai review from the full scan flow', async () => {
     const rawSecret = 'AlphaBetaGammaDelta1234567890';
     const mockFileContent = [
+      'import cors from "cors";',
       `const apiKey = "${rawSecret}";`,
       'app.use(cors({ origin: "*" }));',
+      'await app.listen(port);',
     ].join('\n');
 
     const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
@@ -122,6 +124,7 @@ describe('ScansService', () => {
         return toJsonResponse({
           tree: [
             { path: 'backend/src/main.ts' },
+            { path: '.env' },
             { path: 'README.md' },
           ],
         });
@@ -203,8 +206,58 @@ describe('ScansService', () => {
           checkId: 'permissive-cors',
           status: 'fail',
         }),
+        expect.objectContaining({
+          checkId: 'committed-env-file',
+          status: 'fail',
+          safeExcerpt: '.env file detected. Content intentionally hidden.',
+        }),
       ]),
     );
+
+    const hardcodedSecretFinding = evidencePacket.findings.find(
+      (finding) => finding.checkId === 'hardcoded-secret',
+    );
+    expect(hardcodedSecretFinding).toBeDefined();
+    expect(hardcodedSecretFinding?.codeContext?.length).toBeGreaterThan(0);
+    expect(hardcodedSecretFinding?.codeContext?.length).toBeLessThanOrEqual(12);
+    expect(hardcodedSecretFinding?.flaggedLineNumber).toBe(2);
+    expect(hardcodedSecretFinding?.flaggedLinePointer).toContain('^');
+    expect(hardcodedSecretFinding?.flaggedLineExplanation).toEqual(
+      'This assignment contains a secret-like value in source code.',
+    );
+    expect(
+      hardcodedSecretFinding?.codeContext?.some((line) => line.isFlaggedLine),
+    ).toBe(true);
+
+    const permissiveCorsFinding = evidencePacket.findings.find(
+      (finding) => finding.checkId === 'permissive-cors',
+    );
+    expect(permissiveCorsFinding).toBeDefined();
+    expect(permissiveCorsFinding?.codeContext?.length).toBeGreaterThan(0);
+    expect(permissiveCorsFinding?.codeContext?.length).toBeLessThanOrEqual(12);
+    expect(permissiveCorsFinding?.flaggedLineNumber).toBe(3);
+    expect(permissiveCorsFinding?.flaggedLinePointer).toContain('^');
+    expect(permissiveCorsFinding?.flaggedLineExplanation).toEqual(
+      'This CORS configuration may allow broader origin access than intended.',
+    );
+    expect(
+      permissiveCorsFinding?.codeContext?.some((line) => line.isFlaggedLine),
+    ).toBe(true);
+
+    const envFinding = evidencePacket.findings.find(
+      (finding) => finding.checkId === 'committed-env-file',
+    );
+    expect(envFinding).toBeDefined();
+    expect(envFinding?.codeContext).toBeUndefined();
+    expect(envFinding?.flaggedLineNumber).toBeUndefined();
+    expect(envFinding?.flaggedLinePointer).toBeUndefined();
+    expect(envFinding?.flaggedLineExplanation).toBeUndefined();
+
+    for (const finding of evidencePacket.findings) {
+      for (const line of finding.codeContext || []) {
+        expect(line.content.length).toBeLessThanOrEqual(120);
+      }
+    }
 
     const serializedResponse = JSON.stringify(response);
     expect(serializedResponse).not.toContain(rawSecret);

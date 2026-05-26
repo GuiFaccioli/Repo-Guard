@@ -24,6 +24,10 @@ export interface ScanChecklistItem {
   filePath?: string;
   lineNumber?: number;
   codeExcerpt?: string;
+  codeContext?: SafeEvidenceCodeContextLine[];
+  flaggedLineNumber?: number;
+  flaggedLinePointer?: string;
+  flaggedLineExplanation?: string;
   githubFileUrl?: string;
   githubFolderUrl?: string;
 }
@@ -56,9 +60,19 @@ export interface SafeEvidenceFinding {
   filePath?: string;
   lineNumber?: number;
   safeExcerpt?: string;
+  codeContext?: SafeEvidenceCodeContextLine[];
+  flaggedLineNumber?: number;
+  flaggedLinePointer?: string;
+  flaggedLineExplanation?: string;
   githubFileUrl?: string;
   githubFolderUrl?: string;
   recommendationKey?: string;
+}
+
+export interface SafeEvidenceCodeContextLine {
+  lineNumber: number;
+  content: string;
+  isFlaggedLine?: boolean;
 }
 
 export interface SafeEvidenceSafetyMetadata {

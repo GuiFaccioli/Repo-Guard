@@ -388,8 +388,21 @@ a {
   gap: 1rem;
 }
 
-.repositories-overview-page .scan-mode-grid {
-  margin-top: 0.15rem;
+.repositories-overview-page {
+  gap: 0.72rem;
+}
+
+.repositories-hero-compact {
+  padding: 0.85rem;
+}
+
+.repository-overview-metrics {
+  gap: 0.58rem;
+}
+
+.metric-card-compact {
+  min-height: 96px;
+  padding: 0.82rem;
 }
 
 .workspace-hero {

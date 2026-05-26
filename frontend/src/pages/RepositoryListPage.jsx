@@ -17,34 +17,6 @@ const initialRepositoriesState = {
 
 const SCAN_CACHE_KEY = 'repoguard.scanResults.v1'
 const REPOSITORY_CACHE_KEY = 'repoguard.repositories.v1'
-const PREFERRED_SCAN_KEY = 'repoguard.preferredScan.v1'
-
-const scanModes = [
-  {
-    key: 'green',
-    title: 'Green Scan',
-    subtitle: 'Baseline hygiene',
-    description:
-      'README, Dependabot, Actions, license and recent activity checks.',
-    toneClass: 'scan-mode-green',
-  },
-  {
-    key: 'yellow',
-    title: 'Yellow Scan',
-    subtitle: 'Maintainability',
-    description:
-      'Scripts, tests, docs structure and project organization checks.',
-    toneClass: 'scan-mode-yellow',
-  },
-  {
-    key: 'red',
-    title: 'Red Scan',
-    subtitle: 'Defensive risk patterns',
-    description:
-      'Potential secret exposure and unsafe code pattern detection.',
-    toneClass: 'scan-mode-red',
-  },
-]
 
 function readJsonStorage(key, fallbackValue) {
   try {
@@ -124,7 +96,7 @@ function getScanStatus(snapshot) {
       scoreLabel: '--',
       severityLabel: 'Not scanned',
       severityClass: 'severity-pill',
-      topIssue: 'Run a scan to inspect this repository.',
+      topIssue: 'No diagnosis yet.',
     }
   }
 
@@ -165,12 +137,6 @@ function RepositoryListPage() {
 
   const [authState, setAuthState] = useState(initialAuthState)
   const [repositoriesState, setRepositoriesState] = useState(initialRepositoriesState)
-  const [selectedScanType, setSelectedScanType] = useState(() => {
-    const savedMode = readJsonStorage(PREFERRED_SCAN_KEY, 'green')
-    return savedMode === 'green' || savedMode === 'yellow' || savedMode === 'red'
-      ? savedMode
-      : 'green'
-  })
   const [scanSnapshots, setScanSnapshots] = useState(() =>
     normalizeScanSnapshots(readJsonStorage(SCAN_CACHE_KEY, {})),
   )
@@ -322,10 +288,6 @@ function RepositoryListPage() {
     setScanSnapshots(normalizeScanSnapshots(readJsonStorage(SCAN_CACHE_KEY, {})))
   }, [])
 
-  useEffect(() => {
-    writeJsonStorage(PREFERRED_SCAN_KEY, selectedScanType)
-  }, [selectedScanType])
-
   const isAuthenticated = authState.status === 'authenticated' && authState.user
   const isLoadingSession = authState.status === 'loading'
   const isUnauthenticated = authState.status === 'unauthenticated'
@@ -355,23 +317,13 @@ function RepositoryListPage() {
       )
     : '--'
 
+  const needsAttentionCount = scannedSnapshots.filter(
+    (item) => item.snapshot.result.summary.failed > 0,
+  ).length
+
   const highRiskCount = scannedSnapshots.filter(
     (item) => item.snapshot.result.summary.highestSeverity === 'high',
   ).length
-
-  const lastScannedRepository = scannedSnapshots
-    .slice()
-    .sort((a, b) => {
-      const aTime = a.snapshot.completedAt ? Date.parse(a.snapshot.completedAt) : 0
-      const bTime = b.snapshot.completedAt ? Date.parse(b.snapshot.completedAt) : 0
-      return bTime - aTime
-    })[0]
-
-  const lastScanHelper = lastScannedRepository
-    ? `${lastScannedRepository.repository.name} · ${formatDate(
-        lastScannedRepository.snapshot.completedAt,
-      )}`
-    : 'No scan completed yet'
 
   const displayName =
     isAuthenticated && authState.user.name?.trim()
@@ -386,13 +338,13 @@ function RepositoryListPage() {
 
   return (
     <div className="page dashboard-page repositories-overview-page">
-      <section className="workspace-hero">
+      <section className="workspace-hero repositories-hero-compact">
         <div className="workspace-hero-copy">
           <p className="eyebrow">Repository selection workspace</p>
           <h1>Choose a repository to inspect</h1>
           <p className="page-description">
-            This page is focused on repository discovery and prioritization. Open a
-            dedicated analysis page to inspect full checks and recommendations.
+            Select one repository to open a focused diagnosis page with checks and
+            recommendations.
           </p>
         </div>
 
@@ -480,50 +432,30 @@ function RepositoryListPage() {
         </Card>
       ) : null}
 
-      <section className="metric-grid" aria-label="Repository overview">
-        <Card className="metric-card">
+      <section className="metric-grid repository-overview-metrics" aria-label="Repository overview">
+        <Card className="metric-card metric-card-compact">
           <p className="metric-label">Total repositories</p>
           <p className="metric-value">{isAuthenticated ? repositoryCount : '--'}</p>
           <p className="metric-helper">Public repositories available for analysis</p>
         </Card>
-        <Card className="metric-card">
+        <Card className="metric-card metric-card-compact">
           <p className="metric-label">Average score</p>
           <p className="metric-value">{isAuthenticated ? averageScore : '--'}</p>
           <p className="metric-helper">
-            {scannedSnapshots.length ? 'Based on completed scans' : 'Run a scan to calculate'}
+            {scannedSnapshots.length ? 'Based on completed scans' : 'Available after first scan'}
           </p>
         </Card>
-        <Card className="metric-card">
+        <Card className="metric-card metric-card-compact">
+          <p className="metric-label">Need attention</p>
+          <p className="metric-value">{isAuthenticated ? needsAttentionCount : '--'}</p>
+          <p className="metric-helper">Repositories with failed checks in latest diagnosis</p>
+        </Card>
+        <Card className="metric-card metric-card-compact">
           <p className="metric-label">High-risk repositories</p>
           <p className="metric-value">{isAuthenticated ? highRiskCount : '--'}</p>
-          <p className="metric-helper">Repositories with latest highest severity = high</p>
-        </Card>
-        <Card className="metric-card">
-          <p className="metric-label">Last completed scan</p>
-          <p className="metric-value">{isAuthenticated ? (lastScannedRepository ? 'Done' : '--') : '--'}</p>
-          <p className="metric-helper">{isAuthenticated ? lastScanHelper : 'Connect GitHub first'}</p>
+          <p className="metric-helper">Repositories with highest severity marked as high</p>
         </Card>
       </section>
-
-      <Card
-        title="Default scan mode for next analysis page"
-        subtitle="This selection is preloaded when opening a repository analysis page"
-      >
-        <div className="scan-mode-grid">
-          {scanModes.map((mode) => (
-            <button
-              key={mode.key}
-              type="button"
-              className={`scan-mode-card ${mode.toneClass} ${selectedScanType === mode.key ? 'scan-mode-card-active' : ''}`.trim()}
-              onClick={() => setSelectedScanType(mode.key)}
-            >
-              <p className="scan-mode-title">{mode.title}</p>
-              <p className="scan-mode-subtitle">{mode.subtitle}</p>
-              <p className="scan-mode-description">{mode.description}</p>
-            </button>
-          ))}
-        </div>
-      </Card>
 
       <Card
         title="Your GitHub public repositories"
@@ -590,7 +522,7 @@ function RepositoryListPage() {
                       </td>
                       <td className="cell-action">
                         <Button to={`/repositories/${repository.id}`}>
-                          {snapshot?.result ? 'View analysis' : 'Analyze repository'}
+                          Inspect repository
                         </Button>
                       </td>
                     </tr>

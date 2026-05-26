@@ -13,6 +13,7 @@ function parseAllowedOrigins(frontendUrlValue: string) {
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   const configService = app.get(ConfigService);
+  const expressApp = app.getHttpAdapter().getInstance();
 
   const frontendUrlValue =
     configService.get<string>('FRONTEND_URL') ?? 'http://localhost:5173';
@@ -45,13 +46,14 @@ async function bootstrap() {
   });
 
   if (isProduction) {
-    app.getHttpAdapter().getInstance().set('trust proxy', 1);
+    expressApp.set('trust proxy', 1);
   }
 
   app.use(
     session({
       name: 'repoguard.sid',
       secret: sessionSecret,
+      proxy: isProduction,
       resave: false,
       saveUninitialized: false,
       cookie: {

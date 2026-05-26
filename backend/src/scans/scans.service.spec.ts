@@ -233,12 +233,30 @@ describe('ScansService', () => {
       (finding) => finding.checkId === 'permissive-cors',
     );
     expect(permissiveCorsFinding).toBeDefined();
+    expect(permissiveCorsFinding?.filePath).toBe('backend/src/main.ts');
     expect(permissiveCorsFinding?.codeContext?.length).toBeGreaterThan(0);
     expect(permissiveCorsFinding?.codeContext?.length).toBeLessThanOrEqual(12);
     expect(permissiveCorsFinding?.flaggedLineNumber).toBe(3);
     expect(permissiveCorsFinding?.flaggedLinePointer).toContain('^');
     expect(permissiveCorsFinding?.flaggedLineExplanation).toEqual(
       'This CORS configuration may allow broader origin access than intended.',
+    );
+    expect(permissiveCorsFinding?.githubFileUrl).toBe(
+      'https://github.com/RepoOwner/RepoName/blob/main/backend/src/main.ts#L3',
+    );
+    expect(permissiveCorsFinding?.githubFolderUrl).toBe(
+      'https://github.com/RepoOwner/RepoName/tree/main/backend/src',
+    );
+    expect(permissiveCorsFinding?.recommendationKey).toBe(
+      'explicit-cors-origins',
+    );
+    expect(
+      permissiveCorsFinding?.codeContext?.find((line) => line.isFlaggedLine),
+    ).toEqual(
+      expect.objectContaining({
+        lineNumber: 3,
+        content: 'app.use(cors({ origin: "*" }));',
+      }),
     );
     expect(
       permissiveCorsFinding?.codeContext?.some((line) => line.isFlaggedLine),
@@ -255,6 +273,7 @@ describe('ScansService', () => {
 
     for (const finding of evidencePacket.findings) {
       for (const line of finding.codeContext || []) {
+        expect(line.lineNumber).toBeGreaterThan(0);
         expect(line.content.length).toBeLessThanOrEqual(120);
       }
     }

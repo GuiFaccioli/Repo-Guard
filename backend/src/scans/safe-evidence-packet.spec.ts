@@ -94,6 +94,73 @@ describe('buildSafeEvidencePacket', () => {
     });
   });
 
+  it('should keep permissive-cors evidence fields while clamping oversized context', () => {
+    const overLimitCorsContext = Array.from({ length: 15 }, (_, index) => {
+      const lineNumber = 41 + index;
+      return {
+        lineNumber,
+        content:
+          lineNumber === 48
+            ? 'app.use(cors({ origin: "*" }));'
+            : `const ctx${lineNumber} = "${'x'.repeat(160)}";`,
+        isFlaggedLine: lineNumber === 48 ? true : undefined,
+      };
+    });
+
+    const results: ScanChecklistResult[] = [
+      {
+        checklist: 'security_basics',
+        title: 'Code safety signals',
+        items: [
+          {
+            label: 'Permissive CORS configuration',
+            status: 'fail',
+            details: 'CORS configuration may need review.',
+            filePath: 'backend/src/main.ts',
+            lineNumber: 48,
+            codeExcerpt: 'app.use(cors({ origin: "*" }));',
+            codeContext: overLimitCorsContext,
+            flaggedLineNumber: 48,
+            githubFileUrl:
+              'https://github.com/GuiFaccioli/FlowLogin/blob/main/backend/src/main.ts#L48',
+          },
+        ],
+      },
+    ];
+
+    const packet = buildSafeEvidencePacket({
+      repository: githubRepository,
+      defaultBranch: 'main',
+      results,
+    });
+
+    const permissiveCorsFinding = packet.findings.find(
+      (finding) => finding.checkId === 'permissive-cors',
+    );
+
+    expect(permissiveCorsFinding).toBeDefined();
+    expect(permissiveCorsFinding?.filePath).toBe('backend/src/main.ts');
+    expect(permissiveCorsFinding?.githubFileUrl).toBe(
+      'https://github.com/GuiFaccioli/FlowLogin/blob/main/backend/src/main.ts#L48',
+    );
+    expect(permissiveCorsFinding?.codeContext).toBeDefined();
+    expect(permissiveCorsFinding?.codeContext?.length).toBeGreaterThan(0);
+    expect(permissiveCorsFinding?.codeContext?.length).toBeLessThanOrEqual(12);
+    expect(
+      permissiveCorsFinding?.codeContext?.find((line) => line.isFlaggedLine),
+    ).toEqual(
+      expect.objectContaining({
+        lineNumber: 48,
+        content: 'app.use(cors({ origin: "*" }));',
+      }),
+    );
+
+    for (const line of permissiveCorsFinding?.codeContext || []) {
+      expect(line.lineNumber).toBeGreaterThan(0);
+      expect(line.content.length).toBeLessThanOrEqual(120);
+    }
+  });
+
   it('should mask secret-like values in excerpts', () => {
     const results: ScanChecklistResult[] = [
       {

@@ -1,14 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import Button from '../components/Button'
 import Card from '../components/Card'
+import {
+  buildOrderedRepositoryChecks,
+} from '../data/repositoryCheckGuides'
 import { buildBackendUrl, normalizeApiBaseUrl } from '../utils/apiUrl'
 
 const SCAN_CACHE_KEY = 'repoguard.scanResults.v1'
 const REPOSITORY_CACHE_KEY = 'repoguard.repositories.v1'
 const GREEN_SCAN_TYPE = 'green'
 const UNAUTHORIZED_SCAN_ERROR = 'unauthenticated_scan_request'
-const INSPECTED_SEPARATOR = ' \u00B7 '
+const STATUS_OK_LABEL = '\u2713 OK'
+const STATUS_MISSING_LABEL = '\u2715 Missing'
+const STATUS_OK_PREFIX = '\u2713'
+const STATUS_MISSING_PREFIX = '\u2715'
 const activeScanRequests = new Map()
 
 const initialAuthState = {
@@ -76,46 +82,6 @@ function normalizeScanSnapshots(value) {
   })
 
   return Object.fromEntries(normalizedEntries.filter((entry) => entry[1]))
-}
-
-function formatDate(value) {
-  if (!value) {
-    return 'Unknown'
-  }
-
-  const parsedDate = new Date(value)
-  if (Number.isNaN(parsedDate.getTime())) {
-    return 'Unknown'
-  }
-
-  return parsedDate.toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-}
-
-function getSeverityBadgeClass(severity) {
-  if (severity === 'high') return 'severity-pill severity-high'
-  if (severity === 'medium') return 'severity-pill severity-medium'
-  if (severity === 'low') return 'severity-pill severity-low'
-  return 'severity-pill'
-}
-
-function sortChecksBySeverity(checks) {
-  const weight = {
-    high: 3,
-    medium: 2,
-    low: 1,
-  }
-
-  return checks
-    .slice()
-    .sort((a, b) => (weight[b.severity] || 0) - (weight[a.severity] || 0))
-}
-
-function getReportStatusLabel(failedCount) {
-  return failedCount > 0 ? 'Needs attention' : 'Healthy'
 }
 
 async function requestGreenScan(repositoriesUrl, repositoryId) {
@@ -479,35 +445,25 @@ function RepositoryDetailPage() {
 
   const activeResult = scanState.result
   const hasScanResult = scanState.status === 'success' && Boolean(activeResult)
-
   const activeChecks = Array.isArray(activeResult?.checks) ? activeResult.checks : []
-  const activeRecommendations = Array.isArray(activeResult?.recommendations)
-    ? activeResult.recommendations
-    : []
-  const activeSummary =
-    activeResult && activeResult.summary && typeof activeResult.summary === 'object'
-      ? activeResult.summary
-      : null
 
-  const failedChecks = hasScanResult
-    ? sortChecksBySeverity(activeChecks.filter((check) => !check.passed))
-    : []
+  const orderedChecks = hasScanResult ? buildOrderedRepositoryChecks(activeChecks) : []
+  const correctlyConfiguredChecks = orderedChecks.filter((check) => check.passed)
+  const needsAttentionChecks = orderedChecks.filter((check) => !check.passed)
 
-  const passedCount =
-    typeof activeSummary?.passed === 'number'
-      ? activeSummary.passed
-      : activeChecks.filter((check) => check.passed).length
+  const improveItems = []
+  for (const check of needsAttentionChecks) {
+    if (!improveItems.includes(check.fixTitle)) {
+      improveItems.push(check.fixTitle)
+    }
+  }
 
-  const failedCount =
-    typeof activeSummary?.failed === 'number'
-      ? activeSummary.failed
-      : activeChecks.filter((check) => !check.passed).length
-
-  const inspectedLabels = activeChecks.map((check) => check.label)
-  const reportStatusLabel = getReportStatusLabel(failedCount)
-  const findingsMessage = failedCount
-    ? 'This repository has checks that need attention.'
-    : 'This repository passed the current Green Scan checks.'
+  const learnMoreState = hasRepository
+    ? {
+        repositoryFullName: repositoryState.repository.fullName,
+        connectedLogin: authState.user.login,
+      }
+    : {}
 
   return (
     <div className="page repository-detail-page">
@@ -585,42 +541,12 @@ function RepositoryDetailPage() {
         <Card className="detail-repository-card">
           <div className="detail-repository-header">
             <Button to="/repositories" variant="secondary">
-              Back to repositories
+              {'\u2190'} Back
             </Button>
           </div>
-
+          <p className="detail-repository-meta detail-repository-eyebrow">Project report</p>
           <h1>{repositoryState.repository.fullName}</h1>
-
-          {scanState.status === 'loading' || scanState.status === 'idle' ? (
-            <>
-              <p className="detail-repository-meta">
-                {repositoryState.repository.description || 'No repository description provided.'}
-              </p>
-              <p className="detail-repository-meta">
-                {repositoryState.repository.language || 'Language not specified'}{' '}
-                {'\u00B7'} {repositoryState.repository.private ? 'private' : 'public'} {'\u00B7'} last push{' '}
-                {formatDate(repositoryState.repository.pushedAt)} {'\u00B7'}{' '}
-                <a
-                  className="profile-link"
-                  href={repositoryState.repository.htmlUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Open on GitHub
-                </a>
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="detail-repository-meta">Repository health report</p>
-              {hasScanResult ? (
-                <p className="report-summary-line">
-                  Score: {activeResult.score ?? '--'} {'\u00A0\u00A0\u00A0'} Status: {reportStatusLabel}{' '}
-                  {'\u00A0\u00A0\u00A0'} Green Scan
-                </p>
-              ) : null}
-            </>
-          )}
+          <p className="detail-repository-meta">Minimal repository diagnosis</p>
         </Card>
       ) : null}
 
@@ -651,47 +577,51 @@ function RepositoryDetailPage() {
       {hasRepository && hasScanResult ? (
         <>
           <Card title="What RepoGuard inspected">
-            <p className="scan-inline-list">
-              {inspectedLabels.length
-                ? inspectedLabels.join(INSPECTED_SEPARATOR)
-                : 'No checks were returned by this scan.'}
-            </p>
+            <ul className="report-line-list">
+              {orderedChecks.map((check) => (
+                <li key={`inspected-${check.id}`}>{check.label}</li>
+              ))}
+            </ul>
           </Card>
 
-          <Card title="What RepoGuard found">
-            <p className="scan-check-message">
-              {passedCount} checks passed. {failedCount} checks need attention.
-            </p>
-            <p className="scan-check-message">{findingsMessage}</p>
-          </Card>
-
-          <Card title="What needs attention">
-            {failedChecks.length ? (
-              <ol className="scan-recommendations scan-numbered-list">
-                {failedChecks.map((check) => (
-                  <li key={`attention-${check.key}`}>
-                    <p className="scan-check-message">{check.message}</p>
+          <Card title="What is correctly configured">
+            {correctlyConfiguredChecks.length ? (
+              <ul className="report-line-list report-line-list-status-ok">
+                {correctlyConfiguredChecks.map((check) => (
+                  <li key={`ok-${check.id}`}>
+                    {STATUS_OK_PREFIX} {check.label}
                   </li>
                 ))}
-              </ol>
+              </ul>
             ) : (
-              <p className="scan-check-message">No failed checks in this scan.</p>
+              <p className="scan-check-message">No checks are currently marked as configured.</p>
             )}
           </Card>
 
-          <Card title="How to fix">
-            {activeRecommendations.length ? (
-              <ol className="scan-recommendations scan-numbered-list">
-                {activeRecommendations.map((item, index) => (
-                  <li key={`${item.title}-${index}`}>
-                    <p className="scan-check-message scan-check-message-strong">{item.title}</p>
-                    <p className="scan-check-message">{item.description}</p>
+          <Card title="What needs attention">
+            {needsAttentionChecks.length ? (
+              <ul className="report-line-list report-line-list-status-missing">
+                {needsAttentionChecks.map((check) => (
+                  <li key={`missing-${check.id}`}>
+                    {STATUS_MISSING_PREFIX} {check.label}
                   </li>
                 ))}
-              </ol>
+              </ul>
+            ) : (
+              <p className="scan-check-message">No checks need attention right now.</p>
+            )}
+          </Card>
+
+          <Card title="How to improve">
+            {improveItems.length ? (
+              <ul className="report-line-list">
+                {improveItems.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
             ) : (
               <p className="scan-check-message">
-                No recommendations. This repository passed all checks for this scan.
+                No improvements required for the current Green Scan baseline.
               </p>
             )}
           </Card>
@@ -703,21 +633,38 @@ function RepositoryDetailPage() {
                   <tr>
                     <th>Check</th>
                     <th>Status</th>
-                    <th>Severity</th>
-                    <th>Message</th>
+                    <th>Learn more</th>
+                    <th>How to fix</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {activeChecks.map((check) => (
-                    <tr key={`detail-${check.key}`}>
+                  {orderedChecks.map((check) => (
+                    <tr key={`detail-${check.id}`}>
                       <td>{check.label}</td>
-                      <td>{check.passed ? 'pass' : 'fail'}</td>
-                      <td>
-                        <span className={getSeverityBadgeClass(check.severity)}>
-                          {check.severity}
-                        </span>
+                      <td className={check.passed ? 'check-status-ok' : 'check-status-missing'}>
+                        {check.passed ? STATUS_OK_LABEL : STATUS_MISSING_LABEL}
                       </td>
-                      <td>{check.message}</td>
+                      <td>
+                        <Link
+                          className="table-action-link"
+                          to={`/repositories/${repositoryId}/checks/${check.id}`}
+                          state={learnMoreState}
+                        >
+                          [Learn more]
+                        </Link>
+                      </td>
+                      <td>
+                        <Link
+                          className="table-action-link"
+                          to={{
+                            pathname: `/repositories/${repositoryId}/checks/${check.id}`,
+                            hash: '#how-to-fix',
+                          }}
+                          state={learnMoreState}
+                        >
+                          {check.passed ? '[View]' : '[Fix]'}
+                        </Link>
+                      </td>
                     </tr>
                   ))}
                 </tbody>

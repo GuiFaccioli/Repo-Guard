@@ -1,166 +1,295 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
 import Button from '../components/Button'
 import Card from '../components/Card'
 import { buildBackendUrl, normalizeApiBaseUrl } from '../utils/apiUrl'
+import { normalizeRepositoryUrl } from '../utils/repositoryUrl'
+
+const CHECKLIST_OPTIONS = [
+  {
+    id: 'good_practices',
+    label: 'Good practices',
+    description: 'Baseline documentation, automation, and maintenance signals.',
+  },
+  {
+    id: 'security_basics',
+    label: 'Security basics',
+    description: 'Simple guardrails for secrets, risky patterns, and unsafe code.',
+  },
+]
+
+const initialScanState = {
+  status: 'idle',
+  result: null,
+  error: '',
+}
 
 function LandingPage() {
-  const navigate = useNavigate()
   const rawApiBaseUrl = import.meta.env.VITE_API_URL
   const apiBaseUrl = useMemo(
     () => normalizeApiBaseUrl(rawApiBaseUrl),
     [rawApiBaseUrl],
   )
-  const authMeUrl = useMemo(
-    () => buildBackendUrl(apiBaseUrl, '/auth/me'),
-    [apiBaseUrl],
+  const scansUrl = useMemo(() => buildBackendUrl(apiBaseUrl, '/scans'), [apiBaseUrl])
+
+  const [repositoryUrl, setRepositoryUrl] = useState('')
+  const [selectedChecklists, setSelectedChecklists] = useState(['good_practices'])
+  const [scanState, setScanState] = useState(initialScanState)
+  const [urlTouched, setUrlTouched] = useState(false)
+  const [checklistTouched, setChecklistTouched] = useState(false)
+  const [submitAttempted, setSubmitAttempted] = useState(false)
+
+  const repositoryTarget = useMemo(
+    () => normalizeRepositoryUrl(repositoryUrl),
+    [repositoryUrl],
   )
-  const oauthStartUrl = useMemo(
-    () => buildBackendUrl(apiBaseUrl, '/auth/github/start'),
-    [apiBaseUrl],
-  )
 
-  const [authFlowState, setAuthFlowState] = useState('checking')
-  const [authFlowError, setAuthFlowError] = useState('')
-  const hasCheckedSessionRef = useRef(false)
-  const hasStartedOAuthRef = useRef(false)
-
-  const hasValidApiConfig = Boolean(apiBaseUrl && authMeUrl && oauthStartUrl)
-
-  const startOAuth = useCallback(
-    (origin = 'auto') => {
-      if (!oauthStartUrl) {
-        setAuthFlowState('missing_config')
-        return
-      }
-
-      if (origin === 'auto' && hasStartedOAuthRef.current) {
-        return
-      }
-
-      if (origin === 'auto') {
-        hasStartedOAuthRef.current = true
-      }
-
-      setAuthFlowError('')
-      setAuthFlowState('redirecting_github')
-      window.location.assign(oauthStartUrl)
-    },
-    [oauthStartUrl],
-  )
+  const isRepositoryUrlValid = Boolean(repositoryTarget)
+  const hasChecklistSelection = selectedChecklists.length > 0
+  const canStartScan =
+    Boolean(scansUrl && isRepositoryUrlValid && hasChecklistSelection) &&
+    scanState.status !== 'loading'
 
   useEffect(() => {
-    document.title = 'RepoGuard · Connecting GitHub'
+    document.title = 'RepoGuard · Scan repository'
   }, [])
 
-  useEffect(() => {
-    if (!hasValidApiConfig) {
-      setAuthFlowState('missing_config')
-      setAuthFlowError('')
+  const urlErrorMessage =
+    (urlTouched || submitAttempted) && !isRepositoryUrlValid
+      ? 'Enter a supported GitHub, GitLab, or Bitbucket repository URL.'
+      : ''
+
+  const checklistErrorMessage =
+    (checklistTouched || submitAttempted) && !hasChecklistSelection
+      ? 'Select at least one checklist to continue.'
+      : ''
+
+  const buildScanErrorMessage = (statusCode) => {
+    if (statusCode === 404) {
+      return 'RepoGuard could not access that repository. Check the link and try again.'
+    }
+
+    if (statusCode === 422) {
+      return 'RepoGuard could not normalize that repository URL.'
+    }
+
+    if (statusCode === 400) {
+      return 'Please review the repository URL and checklist selection.'
+    }
+
+    return 'RepoGuard could not complete the scan. Try again in a moment.'
+  }
+
+  const executeScan = async () => {
+    setUrlTouched(true)
+    setChecklistTouched(true)
+    setSubmitAttempted(true)
+
+    if (!scansUrl || !isRepositoryUrlValid || !hasChecklistSelection) {
       return
     }
 
-    if (hasCheckedSessionRef.current) {
-      return
-    }
+    setScanState({
+      status: 'loading',
+      result: null,
+      error: '',
+    })
 
-    hasCheckedSessionRef.current = true
-    let isCancelled = false
+    try {
+      const response = await fetch(scansUrl, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          repositoryUrl: repositoryTarget.url,
+          checklists: selectedChecklists,
+        }),
+      })
 
-    const runSessionCheck = async () => {
-      setAuthFlowState('checking')
-      setAuthFlowError('')
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}))
+        const message =
+          typeof payload?.message === 'string' && payload.message.trim()
+            ? payload.message
+            : buildScanErrorMessage(response.status)
 
-      try {
-        const response = await fetch(authMeUrl, {
-          method: 'GET',
-          credentials: 'include',
-          headers: {
-            Accept: 'application/json',
-          },
+        setScanState({
+          status: 'error',
+          result: null,
+          error: message,
         })
-
-        if (!response.ok) {
-          throw new Error(`auth_me_http_${response.status}`)
-        }
-
-        const payload = await response.json()
-        if (isCancelled) {
-          return
-        }
-
-        if (payload?.authenticated) {
-          setAuthFlowState('redirecting_repositories')
-          navigate('/repositories', { replace: true })
-          return
-        }
-
-        setAuthFlowState('redirecting_github')
-        startOAuth('auto')
-      } catch {
-        if (isCancelled) {
-          return
-        }
-
-        setAuthFlowState('error')
-        setAuthFlowError(
-          'Could not verify your GitHub session. Check backend availability and try again.',
-        )
+        return
       }
-    }
 
-    void runSessionCheck()
-
-    return () => {
-      isCancelled = true
+      const payload = await response.json()
+      setScanState({
+        status: 'success',
+        result: payload,
+        error: '',
+      })
+    } catch {
+      setScanState({
+        status: 'error',
+        result: null,
+        error: buildScanErrorMessage(500),
+      })
     }
-  }, [authMeUrl, hasValidApiConfig, navigate, startOAuth])
+  }
+
+  const handleSubmit = (event) => {
+    event.preventDefault()
+    void executeScan()
+  }
+
+  const handleRetry = () => {
+    void executeScan()
+  }
+
+  const handleChecklistToggle = (checklistId) => {
+    setChecklistTouched(true)
+    setSelectedChecklists((current) => {
+      if (current.includes(checklistId)) {
+        return current.filter((item) => item !== checklistId)
+      }
+
+      return [...current, checklistId]
+    })
+  }
 
   return (
-    <div className="page onboarding-page">
-      <Card className="connect-card connect-card-minimal">
+    <div className="page scan-page">
+      <Card className="scan-intro-card">
         <p className="onboarding-brand">RepoGuard</p>
-        <h1>Preparing GitHub connection...</h1>
+        <h1>Scan a repository</h1>
         <p className="page-description">
-          You will be redirected to GitHub to authorize repository analysis.
+          Paste a repository URL, choose at least one checklist, and RepoGuard will run a
+          focused report.
         </p>
-
-        {authFlowState === 'checking' || authFlowState === 'redirecting_github' ? (
-          <p className="state-note">
-            Starting the GitHub authentication flow.
-          </p>
-        ) : null}
-
-        {authFlowState === 'redirecting_repositories' ? (
-          <p className="state-note">
-            Active session detected. Redirecting to repositories...
-          </p>
-        ) : null}
-
-        {authFlowState === 'error' ? (
-          <p className="state-note state-note-danger">{authFlowError}</p>
-        ) : null}
-
-        {authFlowState === 'missing_config' ? (
-          <p className="state-note state-note-danger">
-            Backend API URL is not configured for this environment.
-          </p>
-        ) : null}
-
-        <div className="hero-actions">
-          {oauthStartUrl && apiBaseUrl ? (
-            <Button href={oauthStartUrl}>Continue with GitHub</Button>
-          ) : (
-            <Button disabled>Continue with GitHub</Button>
-          )}
-
-          {authFlowState === 'error' ? (
-            <Button type="button" variant="secondary" onClick={() => window.location.reload()}>
-              Retry session check
-            </Button>
-          ) : null}
-        </div>
       </Card>
+
+      <Card className="scan-form-card">
+        <form className="scan-form" onSubmit={handleSubmit}>
+          <div className="scan-field-group">
+            <label className="scan-field-label" htmlFor="repository-url">
+              Paste the repository link
+            </label>
+            <input
+              id="repository-url"
+              name="repository-url"
+              className={`scan-input ${urlErrorMessage ? 'scan-input-error' : ''}`.trim()}
+              type="text"
+              inputMode="url"
+              autoComplete="off"
+              spellCheck="false"
+              placeholder="https://github.com/user/repo"
+              value={repositoryUrl}
+              onChange={(event) => setRepositoryUrl(event.target.value)}
+              onBlur={() => setUrlTouched(true)}
+            />
+            <p className="scan-field-help">
+              Supported hosts: GitHub, GitLab, and Bitbucket.
+            </p>
+            {urlErrorMessage ? (
+              <p className="scan-field-error-message" role="alert">
+                {urlErrorMessage}
+              </p>
+            ) : null}
+          </div>
+
+          <fieldset className="scan-checklist-fieldset">
+            <legend className="scan-field-label">Choose at least 1 checklist to analyze</legend>
+
+            <div className="scan-checklist-grid">
+              {CHECKLIST_OPTIONS.map((option) => {
+                const isChecked = selectedChecklists.includes(option.id)
+
+                return (
+                  <label key={option.id} className="scan-checklist-option">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => handleChecklistToggle(option.id)}
+                    />
+                    <span className="scan-checklist-copy">
+                      <span className="scan-checklist-title">{option.label}</span>
+                      <span className="scan-checklist-description">{option.description}</span>
+                    </span>
+                  </label>
+                )
+              })}
+            </div>
+
+            {checklistErrorMessage ? (
+              <p className="scan-field-error-message" role="alert">
+                {checklistErrorMessage}
+              </p>
+            ) : null}
+          </fieldset>
+
+          <div className="scan-actions">
+            <Button type="submit" disabled={!canStartScan || scanState.status === 'loading'}>
+              Start scan
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      {scanState.status === 'loading' ? (
+        <Card className="scan-state-card" title="Scanning repository">
+          <p className="state-note scan-state-message">
+            RepoGuard is checking repository health signals.
+          </p>
+        </Card>
+      ) : null}
+
+      {scanState.status === 'error' ? (
+        <Card className="scan-state-card" title="Scan could not be completed">
+          <p className="state-note scan-state-message">{scanState.error}</p>
+          <div className="hero-actions scan-state-actions">
+            <Button type="button" onClick={handleRetry}>
+              Retry scan
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
+      {scanState.status === 'success' && scanState.result ? (
+        <section className="scan-results" aria-label="Scan results">
+          <Card className="scan-results-intro">
+            <h2>Scan results</h2>
+            <p className="page-description">
+              RepoGuard renders only the categories you selected for this scan.
+            </p>
+          </Card>
+
+          {Array.isArray(scanState.result.results)
+            ? scanState.result.results.map((group) => (
+                <Card key={group.checklist} className="scan-result-card" title={group.title}>
+                  <ul className="scan-result-list">
+                    {Array.isArray(group.items)
+                      ? group.items.map((item) => (
+                          <li
+                            key={`${group.checklist}-${item.label}`}
+                            className={`scan-result-item scan-result-item-${item.status}`.trim()}
+                          >
+                            <span className="scan-result-icon" aria-hidden="true">
+                              {item.status === 'pass' ? '✓' : '✕'}
+                            </span>
+                            <span className="scan-result-copy">
+                              <span className="scan-result-label">{item.label}</span>
+                              <span className="scan-result-details">{item.details}</span>
+                            </span>
+                          </li>
+                        ))
+                      : null}
+                  </ul>
+                </Card>
+              ))
+            : null}
+        </section>
+      ) : null}
     </div>
   )
 }

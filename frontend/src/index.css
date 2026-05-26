@@ -566,6 +566,206 @@ a {
   gap: 0.34rem;
 }
 
+.scan-page {
+  display: grid;
+  gap: 1rem;
+}
+
+.scan-form {
+  display: grid;
+  gap: 1.1rem;
+}
+
+.scan-field-group,
+.scan-checklist-fieldset {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.scan-field-label {
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.scan-input {
+  width: 100%;
+  min-height: 2.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: #0d1117;
+  color: var(--text);
+  padding: 0.68rem 0.82rem;
+  font: inherit;
+}
+
+.scan-input::placeholder {
+  color: var(--text-muted);
+}
+
+.scan-input:hover {
+  border-color: #8b949e;
+}
+
+.scan-input:focus-visible {
+  border-color: var(--primary);
+  outline: 2px solid rgba(47, 129, 247, 0.24);
+  outline-offset: 2px;
+}
+
+.scan-input-error {
+  border-color: rgba(248, 81, 73, 0.8);
+}
+
+.scan-field-help {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.scan-field-error-message {
+  color: var(--danger);
+  font-size: 0.84rem;
+}
+
+.scan-checklist-grid {
+  display: grid;
+  gap: 0.68rem;
+}
+
+.scan-checklist-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.78rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  background: #0d1117;
+  padding: 0.88rem 0.92rem;
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease;
+}
+
+.scan-checklist-option:hover {
+  border-color: #8b949e;
+  background: rgba(177, 186, 196, 0.04);
+}
+
+.scan-checklist-option input {
+  margin-top: 0.12rem;
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  accent-color: var(--primary);
+}
+
+.scan-checklist-copy {
+  display: grid;
+  gap: 0.16rem;
+}
+
+.scan-checklist-title {
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.scan-checklist-description {
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.scan-actions {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.scan-state-card,
+.scan-results-intro,
+.scan-result-card {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.scan-state-message {
+  max-width: 58ch;
+}
+
+.scan-results {
+  display: grid;
+  gap: 1rem;
+}
+
+.scan-result-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.scan-result-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.72rem;
+  border: 1px solid var(--line);
+  border-radius: 0.8rem;
+  background: #0d1117;
+  padding: 0.88rem 0.92rem;
+}
+
+.scan-result-item-pass {
+  border-color: rgba(63, 185, 80, 0.36);
+}
+
+.scan-result-item-fail {
+  border-color: rgba(248, 81, 73, 0.36);
+}
+
+.scan-result-icon {
+  width: 1.25rem;
+  flex: 0 0 auto;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.scan-result-item-pass .scan-result-icon {
+  color: #3fb950;
+}
+
+.scan-result-item-fail .scan-result-icon {
+  color: var(--danger);
+}
+
+.scan-result-copy {
+  display: grid;
+  gap: 0.16rem;
+}
+
+.scan-result-label {
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.scan-result-details {
+  color: var(--text-muted);
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.scan-results-intro h2 {
+  font-family: var(--github-font);
+  font-size: 1.12rem;
+  letter-spacing: -0.01em;
+}
+
 .site-footer {
   border-top: 1px solid var(--line);
   background: rgba(13, 17, 23, 0.94);
@@ -630,5 +830,20 @@ a {
 
   .site-footer-inner {
     min-height: 2.9rem;
+  }
+
+  .scan-checklist-grid {
+    gap: 0.6rem;
+  }
+
+  .scan-checklist-option,
+  .scan-result-item {
+    padding: 0.82rem 0.82rem;
+  }
+}
+
+@media (min-width: 781px) {
+  .scan-checklist-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

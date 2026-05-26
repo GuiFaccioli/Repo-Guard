@@ -24,6 +24,12 @@ function readJsonStorage(key, fallbackValue) {
   }
 }
 
+function normalizeHttpUrl(value) {
+  return typeof value === 'string' && /^https?:\/\//i.test(value.trim())
+    ? value.trim()
+    : null
+}
+
 function resolveSafeEvidence(routeRepositoryId, checkId, routeState) {
   const cache = readJsonStorage(SAFE_SCAN_EVIDENCE_CACHE_KEY, {})
   const repositories =
@@ -35,6 +41,7 @@ function resolveSafeEvidence(routeRepositoryId, checkId, routeState) {
     !Array.isArray(cache.repositories)
       ? cache.repositories
       : {}
+
   const repositoryCache = repositories[String(routeRepositoryId)] || {}
   const checks =
     repositoryCache &&
@@ -45,6 +52,7 @@ function resolveSafeEvidence(routeRepositoryId, checkId, routeState) {
     !Array.isArray(repositoryCache.checks)
       ? repositoryCache.checks
       : {}
+
   const cachedCheckEvidence = checks[String(checkId)] || {}
 
   const readStatus = (value) => (value === 'pass' || value === 'fail' ? value : null)
@@ -82,12 +90,21 @@ function resolveSafeEvidence(routeRepositoryId, checkId, routeState) {
         ? cachedCheckEvidence.details.trim()
         : ''
 
+  const githubFileUrlCandidate =
+    normalizeHttpUrl(routeState?.githubFileUrl) ||
+    normalizeHttpUrl(cachedCheckEvidence?.githubFileUrl)
+  const githubFolderUrlCandidate =
+    normalizeHttpUrl(routeState?.githubFolderUrl) ||
+    normalizeHttpUrl(cachedCheckEvidence?.githubFolderUrl)
+
   return {
     status: routeStatus || cachedStatus,
     filePath: filePathCandidate,
     lineNumber: lineNumberCandidate,
     codeExcerpt: codeExcerptCandidate ? codeExcerptCandidate.slice(0, 220) : null,
     details: detailsCandidate,
+    githubFileUrl: githubFileUrlCandidate,
+    githubFolderUrl: githubFolderUrlCandidate,
     repositoryFullName:
       typeof repositoryCache?.repositoryFullName === 'string' &&
       repositoryCache.repositoryFullName.trim()
@@ -121,14 +138,13 @@ function normalizeOfficialDocsLinks(guide) {
     .filter((item) => item && typeof item === 'object')
     .map((item) => {
       const label = typeof item.label === 'string' ? item.label.trim() : ''
-      const url = typeof item.url === 'string' ? item.url.trim() : ''
-      const validUrl = /^https?:\/\//i.test(url) ? url : ''
+      const url = normalizeHttpUrl(item?.url)
 
-      if (!label || !validUrl) {
+      if (!label || !url) {
         return null
       }
 
-      return { label, url: validUrl }
+      return { label, url }
     })
     .filter(Boolean)
 }
@@ -144,10 +160,7 @@ function RepositoryCheckGuidePage() {
     () => normalizeApiBaseUrl(rawApiBaseUrl),
     [rawApiBaseUrl],
   )
-  const authMeUrl = useMemo(
-    () => buildBackendUrl(apiBaseUrl, '/auth/me'),
-    [apiBaseUrl],
-  )
+  const authMeUrl = useMemo(() => buildBackendUrl(apiBaseUrl, '/auth/me'), [apiBaseUrl])
 
   const routeRepositoryId = typeof id === 'string' ? id : ''
   const numericRouteRepositoryId = Number(id)
@@ -159,9 +172,10 @@ function RepositoryCheckGuidePage() {
     [checkId, routeRepositoryId, routeState],
   )
   const failedCodeSafetyView = codeSafetyCheck && safeEvidence.status === 'fail'
-  const docsHeading = failedCodeSafetyView ? 'What’s wrong?' : 'Learn more'
+  const docsHeading = failedCodeSafetyView ? 'What\u2019s wrong?' : 'Learn more'
   const officialDocs = useMemo(() => normalizeOfficialDocsLinks(guide), [guide])
   const safeExample = useMemo(() => extractSafeExample(guide), [guide])
+
   const saferDirectionSteps = useMemo(() => {
     if (!Array.isArray(guide?.howToFix)) {
       return []
@@ -171,6 +185,7 @@ function RepositoryCheckGuidePage() {
       .filter((step) => typeof step === 'string' && !/^safe example:\s*/i.test(step))
       .slice(0, 3)
   }, [guide])
+
   const saferDirectionSummary = useMemo(() => {
     if (typeof guide?.saferDirection === 'string' && guide.saferDirection.trim()) {
       return guide.saferDirection.trim()
@@ -178,6 +193,7 @@ function RepositoryCheckGuidePage() {
 
     return saferDirectionSteps[0] || 'Use a safer, explicit implementation pattern for this check.'
   }, [guide, saferDirectionSteps])
+
   const saferExampleSnippet = useMemo(() => {
     if (typeof guide?.saferExample === 'string' && guide.saferExample.trim()) {
       return guide.saferExample.trim()
@@ -185,6 +201,35 @@ function RepositoryCheckGuidePage() {
 
     return safeExample
   }, [guide, safeExample])
+
+  const evidenceCodeSnippet = useMemo(() => {
+    if (safeEvidence.codeExcerpt) {
+      return safeEvidence.codeExcerpt
+    }
+
+    return ''
+  }, [safeEvidence.codeExcerpt])
+
+  const failedCurrentPatternSnippet = useMemo(() => {
+    if (safeEvidence.codeExcerpt) {
+      return safeEvidence.codeExcerpt
+    }
+
+    if (typeof guide?.currentPattern === 'string' && guide.currentPattern.trim()) {
+      return guide.currentPattern.trim()
+    }
+
+    return ''
+  }, [guide, safeEvidence.codeExcerpt])
+
+  const recommendedPatternSnippet = useMemo(() => {
+    if (typeof guide?.recommendedPattern === 'string' && guide.recommendedPattern.trim()) {
+      return guide.recommendedPattern.trim()
+    }
+
+    return saferExampleSnippet
+  }, [guide, saferExampleSnippet])
+
   const foundSummary = useMemo(() => {
     if (safeEvidence.details) {
       return safeEvidence.details
@@ -196,6 +241,7 @@ function RepositoryCheckGuidePage() {
 
     return guide?.shortDescription || ''
   }, [guide, safeEvidence.details])
+
   const attentionSummary = useMemo(() => {
     if (typeof guide?.whyNeedsAttention === 'string' && guide.whyNeedsAttention.trim()) {
       return guide.whyNeedsAttention.trim()
@@ -204,17 +250,46 @@ function RepositoryCheckGuidePage() {
     return guide?.whyMatters || ''
   }, [guide])
 
+  const whatIsWrongSummary = useMemo(() => {
+    if (typeof guide?.whatIsWrongHere === 'string' && guide.whatIsWrongHere.trim()) {
+      return guide.whatIsWrongHere.trim()
+    }
+
+    return attentionSummary
+  }, [attentionSummary, guide])
+
+  const githubEvidenceLink = useMemo(() => {
+    if (safeEvidence.githubFileUrl) {
+      return {
+        label: 'Open file on GitHub \u2197',
+        url: safeEvidence.githubFileUrl,
+      }
+    }
+
+    if (safeEvidence.githubFolderUrl) {
+      return {
+        label: 'Open folder on GitHub \u2197',
+        url: safeEvidence.githubFolderUrl,
+      }
+    }
+
+    return null
+  }, [safeEvidence.githubFileUrl, safeEvidence.githubFolderUrl])
+
   const [connectedLogin, setConnectedLogin] = useState(
     typeof routeState.connectedLogin === 'string' ? routeState.connectedLogin : '',
   )
 
   useEffect(() => {
     if (guide?.label) {
-      document.title = `RepoGuard · Learn more about ${guide.label}`
+      document.title = failedCodeSafetyView
+        ? `RepoGuard \u00b7 What\u2019s wrong? ${guide.label}`
+        : `RepoGuard \u00b7 Learn more about ${guide.label}`
       return
     }
-    document.title = 'RepoGuard · Learn more'
-  }, [guide])
+
+    document.title = 'RepoGuard \u00b7 Learn more'
+  }, [failedCodeSafetyView, guide])
 
   useEffect(() => {
     if (connectedLogin || !authMeUrl) {
@@ -325,64 +400,134 @@ function RepositoryCheckGuidePage() {
             {'\u2190'} Back to report
           </Button>
         </div>
-        <p className="detail-repository-meta detail-repository-eyebrow">Project report · {repositoryFullName}</p>
+        <p className="detail-repository-meta detail-repository-eyebrow">
+          Project report \u00b7 {repositoryFullName}
+        </p>
         <h1>{guide.label}</h1>
         <p className="repository-guide-doc-heading">{docsHeading}</p>
         <p className="detail-repository-meta">{foundSummary}</p>
       </Card>
 
       <Card className="repository-guide-card">
-        <section className="repository-guide-section repository-guide-section-card">
-          <h3>Where RepoGuard found it</h3>
-          {safeEvidence.filePath ? (
-            <p>
-              File: <span className="scan-result-file-path">{safeEvidence.filePath}</span>
-            </p>
-          ) : (
-            <p>File location is not available for this signal.</p>
-          )}
-          {safeEvidence.lineNumber ? <p>Line: {safeEvidence.lineNumber}</p> : null}
-        </section>
+        {failedCodeSafetyView ? (
+          <>
+            <section className="repository-guide-section repository-guide-section-card">
+              <h3>Where RepoGuard found it</h3>
+              {safeEvidence.filePath ? (
+                <p>
+                  File: <span className="scan-result-file-path">{safeEvidence.filePath}</span>
+                </p>
+              ) : (
+                <p>File location is not available for this signal.</p>
+              )}
+              {safeEvidence.lineNumber ? <p>Line: {safeEvidence.lineNumber}</p> : null}
+              {githubEvidenceLink ? (
+                <a
+                  className="repository-guide-evidence-link"
+                  href={githubEvidenceLink.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {githubEvidenceLink.label}
+                </a>
+              ) : null}
+            </section>
 
-        <section className="repository-guide-section repository-guide-section-card">
-          <h3>Current code pattern</h3>
-          {safeEvidence.codeExcerpt ? (
-            <pre className="repository-guide-code-block">
-              <code>{safeEvidence.codeExcerpt}</code>
-            </pre>
-          ) : (
-            <p>RepoGuard found this signal, but no safe code excerpt is available.</p>
-          )}
-        </section>
+            <section className="repository-guide-section repository-guide-section-card">
+              <h3>Current code pattern</h3>
+              {failedCurrentPatternSnippet ? (
+                <pre className="repository-guide-code-block">
+                  <code>{failedCurrentPatternSnippet}</code>
+                </pre>
+              ) : (
+                <p>RepoGuard found this signal, but no safe code excerpt is available.</p>
+              )}
+            </section>
 
-        <section className="repository-guide-section repository-guide-section-card">
-          <h3>Why this needs attention</h3>
-          <p>{attentionSummary || guide.shortDescription}</p>
-          <p>{guide.whyMatters}</p>
-        </section>
+            <section className="repository-guide-section repository-guide-section-card">
+              <h3>Recommended pattern</h3>
+              {recommendedPatternSnippet ? (
+                <pre className="repository-guide-code-block">
+                  <code>{recommendedPatternSnippet}</code>
+                </pre>
+              ) : (
+                <p>Review the safer direction below for a recommended implementation.</p>
+              )}
+            </section>
 
-        <section className="repository-guide-section repository-guide-section-card" id="how-to-fix">
-          <h3>Safer direction</h3>
-          <p>{saferDirectionSummary}</p>
-          {saferDirectionSteps.length ? (
-            <ol className="scan-numbered-list repository-guide-steps">
-              {saferDirectionSteps.map((step) => (
-                <li key={step}>{step}</li>
-              ))}
-            </ol>
-          ) : null}
-          {saferExampleSnippet ? (
-            <pre className="repository-guide-code-block">
-              <code>{saferExampleSnippet}</code>
-            </pre>
-          ) : null}
-        </section>
+            <section className="repository-guide-section repository-guide-section-card">
+              <h3>What is wrong here?</h3>
+              <p>{whatIsWrongSummary || guide.shortDescription}</p>
+              {guide.whyMatters ? <p>{guide.whyMatters}</p> : null}
+            </section>
 
-        <section className="repository-guide-section repository-guide-section-card">
-          <h3>About this check</h3>
-          <p>{guide.whatItIs}</p>
-          <p>{guide.whyChecked}</p>
-        </section>
+            <section className="repository-guide-section repository-guide-section-card" id="how-to-fix">
+              <h3>How to improve</h3>
+              <p>{saferDirectionSummary}</p>
+              {saferDirectionSteps.length ? (
+                <ol className="scan-numbered-list repository-guide-steps">
+                  {saferDirectionSteps.map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ol>
+              ) : null}
+            </section>
+          </>
+        ) : (
+          <>
+            <section className="repository-guide-section repository-guide-section-card">
+              <h3>Where RepoGuard found it</h3>
+              {safeEvidence.filePath ? (
+                <p>
+                  File: <span className="scan-result-file-path">{safeEvidence.filePath}</span>
+                </p>
+              ) : (
+                <p>File location is not available for this signal.</p>
+              )}
+              {safeEvidence.lineNumber ? <p>Line: {safeEvidence.lineNumber}</p> : null}
+            </section>
+
+            <section className="repository-guide-section repository-guide-section-card">
+              <h3>Current code pattern</h3>
+              {evidenceCodeSnippet ? (
+                <pre className="repository-guide-code-block">
+                  <code>{evidenceCodeSnippet}</code>
+                </pre>
+              ) : (
+                <p>RepoGuard found this signal, but no safe code excerpt is available.</p>
+              )}
+            </section>
+
+            <section className="repository-guide-section repository-guide-section-card">
+              <h3>Why this needs attention</h3>
+              <p>{attentionSummary || guide.shortDescription}</p>
+              <p>{guide.whyMatters}</p>
+            </section>
+
+            <section className="repository-guide-section repository-guide-section-card" id="how-to-fix">
+              <h3>Safer direction</h3>
+              <p>{saferDirectionSummary}</p>
+              {saferDirectionSteps.length ? (
+                <ol className="scan-numbered-list repository-guide-steps">
+                  {saferDirectionSteps.map((step) => (
+                    <li key={step}>{step}</li>
+                  ))}
+                </ol>
+              ) : null}
+              {saferExampleSnippet ? (
+                <pre className="repository-guide-code-block">
+                  <code>{saferExampleSnippet}</code>
+                </pre>
+              ) : null}
+            </section>
+
+            <section className="repository-guide-section repository-guide-section-card">
+              <h3>About this check</h3>
+              <p>{guide.whatItIs}</p>
+              <p>{guide.whyChecked}</p>
+            </section>
+          </>
+        )}
 
         {officialDocs.length ? (
           <section className="repository-guide-section repository-guide-section-card repository-guide-doc-links">

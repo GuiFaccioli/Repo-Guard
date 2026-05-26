@@ -17,6 +17,8 @@ export interface ScanChecklistItem {
   filePath?: string;
   lineNumber?: number;
   codeExcerpt?: string;
+  githubFileUrl?: string;
+  githubFolderUrl?: string;
 }
 
 export interface ScanChecklistResult {

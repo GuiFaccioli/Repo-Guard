@@ -173,6 +173,10 @@ const ADDITIONAL_REPOSITORY_CHECK_GUIDES = [
     saferDirection:
       'Prefer environment variables or a dedicated secrets manager so sensitive values stay outside the repository.',
     saferExample: 'const apiKey = process.env.API_KEY;',
+    currentPattern: 'const apiKey = "sk_live_********";',
+    recommendedPattern: 'const apiKey = process.env.API_KEY;',
+    whatIsWrongHere:
+      'Secrets should not live directly in source code because they can be copied from repository history and reused outside controlled environments.',
     officialDocs: [
       {
         label: 'GitHub: About secret scanning',
@@ -212,6 +216,11 @@ const ADDITIONAL_REPOSITORY_CHECK_GUIDES = [
     saferDirection:
       'Keep runtime secrets in deployment configuration and commit only a safe template file such as .env.example.',
     saferExample: '.env.example\nAPI_KEY=your_api_key_here',
+    currentPattern: '.env file detected. Content intentionally hidden.',
+    recommendedPattern:
+      '.gitignore\n.env\n.env.local\n\n.env.example\nAPI_KEY=your_api_key_here',
+    whatIsWrongHere:
+      'Environment files often contain credentials and private runtime values, so keeping them in version control increases exposure risk.',
     officialDocs: [
       {
         label: 'GitHub: Ignoring files',
@@ -252,6 +261,12 @@ const ADDITIONAL_REPOSITORY_CHECK_GUIDES = [
       'Prefer parameterized queries so values are handled separately from SQL command text.',
     saferExample:
       'const query = "SELECT * FROM users WHERE email = ?";\ndb.query(query, [email]);',
+    currentPattern:
+      "const query = `SELECT * FROM users WHERE email = '${email}'`;",
+    recommendedPattern:
+      'const query = "SELECT * FROM users WHERE email = ?";\ndb.query(query, [email]);',
+    whatIsWrongHere:
+      'Building SQL with dynamic string content mixes command text with input values and makes query handling harder to review safely.',
     officialDocs: [
       {
         label: 'OWASP: SQL Injection Prevention Cheat Sheet',
@@ -291,6 +306,11 @@ const ADDITIONAL_REPOSITORY_CHECK_GUIDES = [
     saferDirection:
       'Prefer explicit control flow with named functions or handler maps instead of executing strings as code.',
     saferExample: 'const handler = handlers[action] ?? defaultHandler;\nhandler(payload);',
+    currentPattern: 'eval(userInput);',
+    recommendedPattern:
+      'const actions = { start: startProcess, stop: stopProcess };\nactions[userAction]?.();',
+    whatIsWrongHere:
+      'Dynamic code execution makes runtime behavior harder to predict and can turn unsafe input into executable logic.',
     officialDocs: [
       {
         label: 'MDN: eval()',
@@ -327,6 +347,11 @@ const ADDITIONAL_REPOSITORY_CHECK_GUIDES = [
       'Prefer explicit allowed origins per environment and review credentials settings together with CORS rules.',
     saferExample:
       'app.use(cors({\n  origin: ["https://app.example.com"],\n  credentials: true,\n}));',
+    currentPattern: 'app.use(cors({ origin: "*" }));',
+    recommendedPattern:
+      'app.use(cors({\n  origin: ["https://app.example.com"],\n  credentials: true,\n}));',
+    whatIsWrongHere:
+      'The current pattern may allow requests from any origin and should be reviewed when the API handles cookies, sessions, credentials, or private user data.',
     officialDocs: [
       {
         label: 'MDN: Cross-Origin Resource Sharing',

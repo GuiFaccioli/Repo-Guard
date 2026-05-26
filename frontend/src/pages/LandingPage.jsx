@@ -177,6 +177,14 @@ function LandingPage() {
             typeof item?.codeExcerpt === 'string' && item.codeExcerpt.trim()
               ? item.codeExcerpt.trim().slice(0, 220)
               : null,
+          githubFileUrl:
+            typeof item?.githubFileUrl === 'string' && item.githubFileUrl.trim()
+              ? item.githubFileUrl.trim()
+              : null,
+          githubFolderUrl:
+            typeof item?.githubFolderUrl === 'string' && item.githubFolderUrl.trim()
+              ? item.githubFolderUrl.trim()
+              : null,
         }
 
         repositoryEvidenceChecks[resolvedCheckId] = safeEvidence
@@ -500,6 +508,7 @@ function LandingPage() {
                                   checklistId: group.checklist,
                                   checkStatus: item.status,
                                   checkLabel: item.label,
+                                  details: typeof item.details === 'string' ? item.details : '',
                                   filePath:
                                     typeof item.filePath === 'string' && item.filePath.trim()
                                       ? item.filePath.trim()
@@ -511,6 +520,16 @@ function LandingPage() {
                                   codeExcerpt:
                                     typeof item.codeExcerpt === 'string' && item.codeExcerpt.trim()
                                       ? item.codeExcerpt.trim().slice(0, 220)
+                                      : null,
+                                  githubFileUrl:
+                                    typeof item.githubFileUrl === 'string' &&
+                                    item.githubFileUrl.trim()
+                                      ? item.githubFileUrl.trim()
+                                      : null,
+                                  githubFolderUrl:
+                                    typeof item.githubFolderUrl === 'string' &&
+                                    item.githubFolderUrl.trim()
+                                      ? item.githubFolderUrl.trim()
                                       : null,
                                 }}
                               >

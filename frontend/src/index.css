@@ -639,6 +639,27 @@ a {
   word-break: break-word;
 }
 
+.repository-guide-evidence-link {
+  justify-self: start;
+  margin-top: 0.24rem;
+  color: #79c0ff;
+  text-decoration: underline;
+  text-decoration-color: rgba(121, 192, 255, 0.45);
+  text-underline-offset: 0.18rem;
+  font-size: 0.83rem;
+}
+
+.repository-guide-evidence-link:hover {
+  color: #a5d6ff;
+  text-decoration-color: rgba(165, 214, 255, 0.8);
+}
+
+.repository-guide-evidence-link:focus-visible {
+  outline: 2px solid rgba(47, 129, 247, 0.65);
+  outline-offset: 2px;
+  border-radius: 0.2rem;
+}
+
 .repository-guide-doc-links {
   gap: 0.45rem;
 }

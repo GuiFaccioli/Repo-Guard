@@ -149,6 +149,7 @@ export class ScansService {
           selectedResults.push(
             await this.buildSecurityBasicsResult(
               target,
+              repositorySnapshot.defaultBranch,
               repositorySnapshot.treePaths,
               repositorySnapshot.textSamples,
             ),
@@ -615,6 +616,7 @@ export class ScansService {
 
   private async buildSecurityBasicsResult(
     target: ParsedRepositoryTarget,
+    defaultBranch: string,
     treePathsInput: string[],
     textSamples: Array<{ path: string; content: string }>,
   ): Promise<ScanChecklistResult> {
@@ -632,7 +634,11 @@ export class ScansService {
             label: 'Possible hardcoded secret',
             status: 'fail',
             details: 'A secret-like value appears to be written directly in code.',
-            ...this.buildEvidenceItem(hardcodedSecretMatch),
+            ...this.buildEvidenceItem(
+              hardcodedSecretMatch,
+              target,
+              defaultBranch,
+            ),
           }
         : {
             label: 'Possible hardcoded secret',
@@ -642,6 +648,9 @@ export class ScansService {
     );
 
     const envFileMatch = this.findCommittedEnvFile(paths);
+    const envEvidenceNavigation = envFileMatch
+      ? this.buildEvidenceNavigation(target, defaultBranch, envFileMatch)
+      : {};
     items.push(
       envFileMatch
         ? {
@@ -650,6 +659,7 @@ export class ScansService {
             filePath: envFileMatch,
             details: 'Environment files can expose private configuration.',
             codeExcerpt: '.env file detected. Content intentionally hidden.',
+            ...envEvidenceNavigation,
           }
         : {
             label: 'Environment file committed',
@@ -668,7 +678,7 @@ export class ScansService {
             label: 'SQL query built with string concatenation',
             status: 'fail',
             details: 'SQL query appears to be built with dynamic string content.',
-            ...this.buildEvidenceItem(sqlConcatMatch),
+            ...this.buildEvidenceItem(sqlConcatMatch, target, defaultBranch),
           }
         : {
             label: 'SQL query built with string concatenation',
@@ -685,7 +695,7 @@ export class ScansService {
             label: 'No eval usage detected',
             status: 'fail',
             details: 'Dynamic code execution pattern detected.',
-            ...this.buildEvidenceItem(evalMatch),
+            ...this.buildEvidenceItem(evalMatch, target, defaultBranch),
           }
         : {
             label: 'No eval usage detected',
@@ -707,14 +717,14 @@ export class ScansService {
         label: 'Permissive CORS configuration',
         status: 'fail',
         details: 'API may be accepting requests from any origin.',
-        ...this.buildEvidenceItem(wildcardCorsMatch),
+        ...this.buildEvidenceItem(wildcardCorsMatch, target, defaultBranch),
       });
     } else if (defaultCorsMatch) {
       items.push({
         label: 'Permissive CORS configuration',
         status: 'fail',
         details: 'CORS configuration may need review.',
-        ...this.buildEvidenceItem(defaultCorsMatch),
+        ...this.buildEvidenceItem(defaultCorsMatch, target, defaultBranch),
       });
     } else {
       items.push({
@@ -744,10 +754,16 @@ export class ScansService {
     };
   }
 
-  private buildEvidenceItem(match: PatternMatch | null): {
+  private buildEvidenceItem(
+    match: PatternMatch | null,
+    target: ParsedRepositoryTarget,
+    defaultBranch: string,
+  ): {
     filePath?: string;
     lineNumber?: number;
     codeExcerpt?: string;
+    githubFileUrl?: string;
+    githubFolderUrl?: string;
   } {
     if (!match?.path) {
       return {};
@@ -773,7 +789,95 @@ export class ScansService {
       evidence.codeExcerpt = this.clampEvidenceLine(match.codeExcerpt);
     }
 
-    return evidence;
+    return {
+      ...evidence,
+      ...this.buildEvidenceNavigation(
+        target,
+        defaultBranch,
+        evidence.filePath,
+        evidence.lineNumber,
+      ),
+    };
+  }
+
+  private buildEvidenceNavigation(
+    target: ParsedRepositoryTarget,
+    defaultBranch: string,
+    filePathInput?: string,
+    lineNumber?: number,
+  ): {
+    githubFileUrl?: string;
+    githubFolderUrl?: string;
+  } {
+    if (target.provider !== 'github') {
+      return {};
+    }
+
+    const safePath = this.sanitizePathForGithubUrl(filePathInput);
+    if (!safePath) {
+      return {};
+    }
+
+    const encodedOwner = encodeURIComponent(target.owner);
+    const encodedRepo = encodeURIComponent(target.name);
+    const encodedBranch = encodeURIComponent(defaultBranch || 'main');
+    const encodedPath = safePath
+      .split('/')
+      .map((segment) => encodeURIComponent(segment))
+      .join('/');
+
+    let githubFileUrl = `https://github.com/${encodedOwner}/${encodedRepo}/blob/${encodedBranch}/${encodedPath}`;
+
+    if (
+      typeof lineNumber === 'number' &&
+      Number.isFinite(lineNumber) &&
+      lineNumber > 0
+    ) {
+      githubFileUrl = `${githubFileUrl}#L${Math.floor(lineNumber)}`;
+    }
+
+    const pathSegments = safePath.split('/');
+    const folderPath = pathSegments.slice(0, -1).join('/');
+    const githubFolderUrl = folderPath
+      ? `https://github.com/${encodedOwner}/${encodedRepo}/tree/${encodedBranch}/${folderPath
+          .split('/')
+          .map((segment) => encodeURIComponent(segment))
+          .join('/')}`
+      : `https://github.com/${encodedOwner}/${encodedRepo}/tree/${encodedBranch}`;
+
+    return {
+      githubFileUrl,
+      githubFolderUrl,
+    };
+  }
+
+  private sanitizePathForGithubUrl(pathInput: unknown): string | null {
+    if (typeof pathInput !== 'string') {
+      return null;
+    }
+
+    const normalizedPath = this.normalizePath(pathInput.replace(/\\/g, '/'));
+    if (!normalizedPath || normalizedPath.length > 300) {
+      return null;
+    }
+
+    const segments = normalizedPath.split('/').filter(Boolean);
+    if (!segments.length) {
+      return null;
+    }
+
+    for (const segment of segments) {
+      if (
+        !segment ||
+        segment === '.' ||
+        segment === '..' ||
+        /[\u0000-\u001f\u007f]/.test(segment)
+      ) {
+        return null;
+      }
+    }
+
+    return segments.join('/');
   }
 
   private findCommittedEnvFile(paths: Set<string>): string | null {

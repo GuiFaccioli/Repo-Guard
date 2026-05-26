@@ -8,6 +8,7 @@ const SCAN_CACHE_KEY = 'repoguard.scanResults.v1'
 const REPOSITORY_CACHE_KEY = 'repoguard.repositories.v1'
 const GREEN_SCAN_TYPE = 'green'
 const UNAUTHORIZED_SCAN_ERROR = 'unauthenticated_scan_request'
+const INSPECTED_SEPARATOR = ' \u00B7 '
 const activeScanRequests = new Map()
 
 const initialAuthState = {
@@ -101,13 +102,6 @@ function getSeverityBadgeClass(severity) {
   return 'severity-pill'
 }
 
-function getScanTypeLabel(scanType) {
-  if (scanType === 'green') return 'Green Scan'
-  if (scanType === 'yellow') return 'Yellow Scan'
-  if (scanType === 'red') return 'Red Scan'
-  return 'Scan'
-}
-
 function sortChecksBySeverity(checks) {
   const weight = {
     high: 3,
@@ -118,6 +112,10 @@ function sortChecksBySeverity(checks) {
   return checks
     .slice()
     .sort((a, b) => (weight[b.severity] || 0) - (weight[a.severity] || 0))
+}
+
+function getReportStatusLabel(failedCount) {
+  return failedCount > 0 ? 'Needs attention' : 'Healthy'
 }
 
 async function requestGreenScan(repositoriesUrl, repositoryId) {
@@ -312,7 +310,7 @@ function RepositoryDetailPage() {
       writeJsonStorage(REPOSITORY_CACHE_KEY, repositories)
 
       const selectedRepository = repositories.find(
-        (repository) => repository.id === repositoryId,
+        (repository) => Number(repository.id) === repositoryId,
       )
 
       if (!selectedRepository) {
@@ -332,7 +330,7 @@ function RepositoryDetailPage() {
     } catch {
       const cachedRepositories = readJsonStorage(REPOSITORY_CACHE_KEY, [])
       const selectedRepository = Array.isArray(cachedRepositories)
-        ? cachedRepositories.find((repository) => repository.id === repositoryId)
+        ? cachedRepositories.find((repository) => Number(repository.id) === repositoryId)
         : null
 
       if (selectedRepository) {
@@ -359,7 +357,7 @@ function RepositoryDetailPage() {
         status: 'error',
         result: null,
         completedAt: null,
-        error: 'Invalid repository id in route.',
+        error: 'invalid_repository_id',
       })
       return
     }
@@ -369,7 +367,7 @@ function RepositoryDetailPage() {
         status: 'error',
         result: null,
         completedAt: null,
-        error: 'Backend API URL is not configured for this environment.',
+        error: 'missing_api_configuration',
       })
       return
     }
@@ -427,8 +425,7 @@ function RepositoryDetailPage() {
         status: 'error',
         result: null,
         completedAt: null,
-        error:
-          error instanceof Error ? error.message : 'Could not run repository scan.',
+        error: 'green_scan_failed',
       })
     }
   }, [hasValidRepositoryId, repositoriesUrl, repositoryId])
@@ -478,6 +475,7 @@ function RepositoryDetailPage() {
   const hasSessionError = authState.status === 'error'
   const isUnauthenticated = authState.status === 'unauthenticated'
   const isAuthenticated = authState.status === 'authenticated' && authState.user
+  const hasRepository = isAuthenticated && repositoryState.status === 'success'
 
   const activeResult = scanState.result
   const hasScanResult = scanState.status === 'success' && Boolean(activeResult)
@@ -505,219 +503,188 @@ function RepositoryDetailPage() {
       ? activeSummary.failed
       : activeChecks.filter((check) => !check.passed).length
 
-  const highestSeverity =
-    typeof activeSummary?.highestSeverity === 'string'
-      ? activeSummary.highestSeverity
-      : failedChecks[0]?.severity || 'low'
+  const inspectedLabels = activeChecks.map((check) => check.label)
+  const reportStatusLabel = getReportStatusLabel(failedCount)
+  const findingsMessage = failedCount
+    ? 'This repository has checks that need attention.'
+    : 'This repository passed the current Green Scan checks.'
 
   return (
     <div className="page repository-detail-page">
-      <Card className="detail-repository-card">
-        <div className="detail-repository-header">
-          <Button to="/repositories" variant="secondary">
-            Back to repositories
-          </Button>
+      {isAuthenticated ? (
+        <div className="page-topbar">
+          <p className="page-topbar-brand">RepoGuard</p>
+          <p className="page-topbar-user">@{authState.user.login} connected</p>
         </div>
+      ) : null}
 
-        {!isAuthenticated ? (
-          <>
-            <h1>Repository analysis</h1>
-            <p className="page-description">
-              Connect with GitHub to open a focused repository diagnosis page.
-            </p>
-          </>
-        ) : null}
+      {!isAuthenticated ? (
+        <Card>
+          <h1>Repository analysis</h1>
+          <p className="page-description">
+            Connect with GitHub to open a focused repository diagnosis page.
+          </p>
+        </Card>
+      ) : null}
 
-        {isLoadingSession ? (
+      {isLoadingSession ? (
+        <Card title="Checking GitHub session" subtitle="Contacting backend /auth/me">
           <p className="state-note">
             Verifying authentication before loading repository analysis...
           </p>
-        ) : null}
+        </Card>
+      ) : null}
 
-        {isMissingConfig ? (
+      {isMissingConfig ? (
+        <Card title="Missing API configuration" subtitle="Set VITE_API_URL for this environment">
           <p className="state-note state-note-danger">
             Backend API URL is not configured for this environment.
           </p>
-        ) : null}
+        </Card>
+      ) : null}
 
-        {hasSessionError ? (
+      {hasSessionError ? (
+        <Card title="Could not validate session" subtitle="Backend request failed">
           <p className="state-note state-note-danger">{authState.error}</p>
-        ) : null}
+        </Card>
+      ) : null}
 
-        {isUnauthenticated ? (
-          <div className="state-grid">
-            <p className="state-note">
-              Your session is not authenticated. Return to onboarding and connect
-              with GitHub again.
-            </p>
-            <div className="hero-actions">
-              <Button to="/">Back to onboarding</Button>
-            </div>
-          </div>
-        ) : null}
-
-        {isAuthenticated && repositoryState.status === 'loading' ? (
-          <p className="state-note">Loading selected repository details...</p>
-        ) : null}
-
-        {isAuthenticated && repositoryState.status === 'error' ? (
-          <p className="state-note state-note-danger">{repositoryState.error}</p>
-        ) : null}
-
-        {isAuthenticated && repositoryState.status === 'not_found' ? (
-          <p className="state-note state-note-danger">
-            The selected repository was not found in your current public repository
-            list.
+      {isUnauthenticated ? (
+        <Card title="Not connected to GitHub" subtitle="Authentication required">
+          <p className="state-note">
+            Your current session is not authenticated. Return to onboarding and try
+            connecting with GitHub again.
           </p>
-        ) : null}
+          <div className="hero-actions">
+            <Button to="/">Back to onboarding</Button>
+          </div>
+        </Card>
+      ) : null}
 
-        {isAuthenticated &&
-        repositoryState.status === 'success' &&
-        (scanState.status === 'idle' || scanState.status === 'loading') ? (
-          <>
-            <h1>Scanning repository</h1>
-            <p className="state-note">
-              RepoGuard is checking repository health signals.
+      {isAuthenticated && repositoryState.status === 'loading' ? (
+        <Card>
+          <p className="state-note">Loading selected repository details...</p>
+        </Card>
+      ) : null}
+
+      {isAuthenticated && repositoryState.status === 'error' ? (
+        <Card>
+          <p className="state-note state-note-danger">{repositoryState.error}</p>
+        </Card>
+      ) : null}
+
+      {isAuthenticated && repositoryState.status === 'not_found' ? (
+        <Card>
+          <p className="state-note state-note-danger">
+            The selected repository was not found in your current public repository list.
+          </p>
+        </Card>
+      ) : null}
+
+      {hasRepository ? (
+        <Card className="detail-repository-card">
+          <div className="detail-repository-header">
+            <Button to="/repositories" variant="secondary">
+              Back to repositories
+            </Button>
+          </div>
+
+          <h1>{repositoryState.repository.fullName}</h1>
+
+          {scanState.status === 'loading' || scanState.status === 'idle' ? (
+            <>
+              <p className="detail-repository-meta">
+                {repositoryState.repository.description || 'No repository description provided.'}
+              </p>
+              <p className="detail-repository-meta">
+                {repositoryState.repository.language || 'Language not specified'}{' '}
+                {'\u00B7'} {repositoryState.repository.private ? 'private' : 'public'} {'\u00B7'} last push{' '}
+                {formatDate(repositoryState.repository.pushedAt)} {'\u00B7'}{' '}
+                <a
+                  className="profile-link"
+                  href={repositoryState.repository.htmlUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Open on GitHub
+                </a>
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="detail-repository-meta">Repository health report</p>
+              {hasScanResult ? (
+                <p className="report-summary-line">
+                  Score: {activeResult.score ?? '--'} {'\u00A0\u00A0\u00A0'} Status: {reportStatusLabel}{' '}
+                  {'\u00A0\u00A0\u00A0'} Green Scan
+                </p>
+              ) : null}
+            </>
+          )}
+        </Card>
+      ) : null}
+
+      {hasRepository && (scanState.status === 'idle' || scanState.status === 'loading') ? (
+        <Card className="scan-state-card">
+          <h2 className="scan-state-title">Scanning repository</h2>
+          <p className="state-note scan-state-message">
+            RepoGuard is checking repository health signals.
+          </p>
+        </Card>
+      ) : null}
+
+      {hasRepository && scanState.status === 'error' ? (
+        <Card className="scan-state-card">
+          <h2 className="scan-state-title">Scan could not be completed</h2>
+          <p className="state-note scan-state-message">
+            RepoGuard could not finish the Green Scan for this repository.
+          </p>
+          <p className="state-note scan-state-message">You can try again.</p>
+          <div className="hero-actions scan-state-actions">
+            <Button type="button" onClick={() => void runGreenScan()}>
+              Retry Green Scan
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
+      {hasRepository && hasScanResult ? (
+        <>
+          <Card title="What RepoGuard inspected">
+            <p className="scan-inline-list">
+              {inspectedLabels.length
+                ? inspectedLabels.join(INSPECTED_SEPARATOR)
+                : 'No checks were returned by this scan.'}
             </p>
-            <div className="hero-actions">
-              <Button to="/repositories" variant="secondary">
-                Choose another project
-              </Button>
-            </div>
-          </>
-        ) : null}
+          </Card>
 
-        {isAuthenticated &&
-        repositoryState.status === 'success' &&
-        scanState.status === 'error' ? (
-          <>
-            <h1>Scanning repository</h1>
-            <p className="state-note state-note-danger">{scanState.error}</p>
-            <div className="hero-actions">
-              <Button type="button" onClick={() => void runGreenScan()}>
-                Retry Green Scan
-              </Button>
-              <Button to="/repositories" variant="secondary">
-                Choose another project
-              </Button>
-            </div>
-          </>
-        ) : null}
-
-        {isAuthenticated && repositoryState.status === 'success' && hasScanResult ? (
-          <>
-            <p className="eyebrow">Project report</p>
-            <h1>{repositoryState.repository.fullName}</h1>
-            <p className="report-summary-line">
-              Score: {activeResult.score ?? '--'} | Status:{' '}
-              <span className={getSeverityBadgeClass(highestSeverity)}>
-                {highestSeverity}
-              </span>{' '}
-              | {getScanTypeLabel(activeResult.scanType)}
-            </p>
-
-            <p className="detail-repository-meta">
-              {repositoryState.repository.description ||
-                'No repository description provided.'}
-            </p>
-
-            <p className="detail-repository-meta">
-              {repositoryState.repository.language || 'Language not specified'} |{' '}
-              {repositoryState.repository.private ? 'private' : 'public'} | Last push:{' '}
-              {formatDate(repositoryState.repository.pushedAt)} | Last scan:{' '}
-              {scanState.completedAt ? formatDate(scanState.completedAt) : 'Unknown'} |{' '}
-              <a
-                className="profile-link"
-                href={repositoryState.repository.htmlUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open on GitHub
-              </a>
-            </p>
-
-            <div className="hero-actions">
-              <Button to="/repositories" variant="secondary">
-                Choose another project
-              </Button>
-            </div>
-          </>
-        ) : null}
-      </Card>
-
-      {isAuthenticated && repositoryState.status === 'success' && hasScanResult ? (
-        <Card className="report-sections-card">
-          <section className="report-section">
-            <h2 className="report-section-title">What RepoGuard inspected</h2>
-            {activeChecks.length ? (
-              <ul className="scan-check-list">
-                {activeChecks.map((check) => (
-                  <li key={`inspected-${check.key}`}>
-                    <div className="scan-check-line">
-                      <span>{check.label}</span>
-                      <span className={check.passed ? 'status-ok' : 'status-failed'}>
-                        {check.passed ? 'pass' : 'fail'}
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="scan-check-message">No checks were returned by this scan.</p>
-            )}
-          </section>
-
-          <section className="report-section">
-            <h2 className="report-section-title">What RepoGuard found</h2>
+          <Card title="What RepoGuard found">
             <p className="scan-check-message">
-              RepoGuard ran {getScanTypeLabel(activeResult.scanType)} and produced score{' '}
-              {activeResult.score ?? '--'}.
+              {passedCount} checks passed. {failedCount} checks need attention.
             </p>
-            <p className="scan-meta">
-              <span className="scan-meta-label">Checks</span>
-              <span>
-                Passed {passedCount} / Failed {failedCount}
-              </span>
-            </p>
-            <p className="scan-meta">
-              <span className="scan-meta-label">Highest severity</span>
-              <span className={getSeverityBadgeClass(highestSeverity)}>{highestSeverity}</span>
-            </p>
-          </section>
+            <p className="scan-check-message">{findingsMessage}</p>
+          </Card>
 
-          <section className="report-section">
-            <h2 className="report-section-title">What needs attention</h2>
+          <Card title="What needs attention">
             {failedChecks.length ? (
-              <ul className="scan-check-list">
+              <ol className="scan-recommendations scan-numbered-list">
                 {failedChecks.map((check) => (
                   <li key={`attention-${check.key}`}>
-                    <div className="scan-check-line">
-                      <span>{check.label}</span>
-                      <span className={getSeverityBadgeClass(check.severity)}>
-                        {check.severity}
-                      </span>
-                    </div>
                     <p className="scan-check-message">{check.message}</p>
                   </li>
                 ))}
-              </ul>
+              </ol>
             ) : (
               <p className="scan-check-message">No failed checks in this scan.</p>
             )}
-          </section>
+          </Card>
 
-          <section className="report-section">
-            <h2 className="report-section-title">How to fix</h2>
+          <Card title="How to fix">
             {activeRecommendations.length ? (
-              <ol className="scan-recommendations">
+              <ol className="scan-recommendations scan-numbered-list">
                 {activeRecommendations.map((item, index) => (
                   <li key={`${item.title}-${index}`}>
-                    <p className="scan-recommendation-title">
-                      <span className={getSeverityBadgeClass(item.priority)}>
-                        {item.priority}
-                      </span>{' '}
-                      {item.title}
-                    </p>
+                    <p className="scan-check-message scan-check-message-strong">{item.title}</p>
                     <p className="scan-check-message">{item.description}</p>
                   </li>
                 ))}
@@ -727,10 +694,9 @@ function RepositoryDetailPage() {
                 No recommendations. This repository passed all checks for this scan.
               </p>
             )}
-          </section>
+          </Card>
 
-          <section className="report-section">
-            <h2 className="report-section-title">Detailed checks</h2>
+          <Card title="Detailed checks">
             <div className="repository-table-wrap">
               <table className="repository-table repository-check-table">
                 <thead>
@@ -757,8 +723,8 @@ function RepositoryDetailPage() {
                 </tbody>
               </table>
             </div>
-          </section>
-        </Card>
+          </Card>
+        </>
       ) : null}
     </div>
   )

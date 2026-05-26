@@ -4,15 +4,6 @@ import Button from '../components/Button'
 import Card from '../components/Card'
 import { buildBackendUrl, normalizeApiBaseUrl } from '../utils/apiUrl'
 
-const checks = [
-  'README',
-  'Dependabot',
-  'GitHub Actions',
-  'License',
-  'Last activity',
-  'Open issues / PRs',
-]
-
 function LandingPage() {
   const navigate = useNavigate()
   const rawApiBaseUrl = import.meta.env.VITE_API_URL
@@ -21,10 +12,14 @@ function LandingPage() {
     [rawApiBaseUrl],
   )
   const authMeUrl = useMemo(
-    () => buildBackendUrl(rawApiBaseUrl, '/auth/me'),
-    [rawApiBaseUrl],
+    () => buildBackendUrl(apiBaseUrl, '/auth/me'),
+    [apiBaseUrl],
   )
-  const oauthStartUrl = buildBackendUrl(rawApiBaseUrl, '/auth/github/start')
+  const oauthStartUrl = useMemo(
+    () => buildBackendUrl(apiBaseUrl, '/auth/github/start'),
+    [apiBaseUrl],
+  )
+
   const [authFlowState, setAuthFlowState] = useState('checking')
   const [authFlowError, setAuthFlowError] = useState('')
   const hasCheckedSessionRef = useRef(false)
@@ -91,7 +86,7 @@ function LandingPage() {
         }
 
         if (payload?.authenticated) {
-          setAuthFlowState('redirecting_dashboard')
+          setAuthFlowState('redirecting_repositories')
           navigate('/repositories', { replace: true })
           return
         }
@@ -119,42 +114,33 @@ function LandingPage() {
 
   return (
     <div className="page onboarding-page">
-      <Card className="connect-card">
-        <p className="eyebrow">GitHub-first onboarding</p>
-        <h1>Connect GitHub to start repository health analysis</h1>
+      <Card className="connect-card connect-card-minimal">
+        <p className="onboarding-brand">RepoGuard</p>
+        <h1>Preparing GitHub connection...</h1>
         <p className="page-description">
-          RepoGuard analyzes repositories for security, quality, and maintenance
-          signals, then organizes results into a clear health score and prioritized
-          recommendations.
+          You will be redirected to GitHub to authorize repository analysis.
         </p>
-
-        <div className="connect-panel">
-          <div className="github-mark" aria-hidden="true">
-            GH
-          </div>
-          <div>
-            <p className="identity-name">GitHub connection required</p>
-            <p className="identity-meta">
-              RepoGuard starts GitHub OAuth through the configured backend API.
-            </p>
-          </div>
-        </div>
 
         {authFlowState === 'checking' || authFlowState === 'redirecting_github' ? (
           <p className="state-note">
-            Preparing GitHub connection... You will be redirected to GitHub to authorize
-            repository analysis.
+            Starting the GitHub authentication flow.
           </p>
         ) : null}
 
-        {authFlowState === 'redirecting_dashboard' ? (
+        {authFlowState === 'redirecting_repositories' ? (
           <p className="state-note">
-            Active session detected. Redirecting to your repository workspace...
+            Active session detected. Redirecting to repositories...
           </p>
         ) : null}
 
         {authFlowState === 'error' ? (
           <p className="state-note state-note-danger">{authFlowError}</p>
+        ) : null}
+
+        {authFlowState === 'missing_config' ? (
+          <p className="state-note state-note-danger">
+            Backend API URL is not configured for this environment.
+          </p>
         ) : null}
 
         <div className="hero-actions">
@@ -163,34 +149,12 @@ function LandingPage() {
           ) : (
             <Button disabled>Continue with GitHub</Button>
           )}
+
           {authFlowState === 'error' ? (
             <Button type="button" variant="secondary" onClick={() => window.location.reload()}>
               Retry session check
             </Button>
           ) : null}
-          <Button to="/repositories" variant="secondary">
-            Preview dashboard
-          </Button>
-        </div>
-        {authFlowState === 'missing_config' ? (
-          <p className="state-note state-note-danger">
-            Backend API URL is not configured for this environment.
-          </p>
-        ) : null}
-
-        <ul className="trust-notes">
-          <li>GitHub tokens will never be exposed to the frontend.</li>
-          <li>Repository analysis starts after authentication.</li>
-        </ul>
-      </Card>
-
-      <Card title="Planned checks preview" subtitle="Initial repository signals">
-        <div className="checks-row">
-          {checks.map((check) => (
-            <span className="check-chip" key={check}>
-              {check}
-            </span>
-          ))}
         </div>
       </Card>
     </div>

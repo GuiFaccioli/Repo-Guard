@@ -17,6 +17,8 @@ const initialRepositoriesState = {
 }
 
 const REPOSITORY_CACHE_KEY = 'repoguard.repositories.v1'
+const DROPDOWN_OPEN_CARET = '\u25B2'
+const DROPDOWN_CLOSED_CARET = '\u25BC'
 
 function readJsonStorage(key, fallbackValue) {
   try {
@@ -38,26 +40,8 @@ function writeJsonStorage(key, value) {
   }
 }
 
-function formatDate(value) {
-  if (!value) {
-    return 'Unknown'
-  }
-
-  const parsedDate = new Date(value)
-  if (Number.isNaN(parsedDate.getTime())) {
-    return 'Unknown'
-  }
-
-  return parsedDate.toLocaleDateString(undefined, {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-}
-
 function RepositoryListPage() {
   const navigate = useNavigate()
-
   const rawApiBaseUrl = import.meta.env.VITE_API_URL
   const apiBaseUrl = useMemo(
     () => normalizeApiBaseUrl(rawApiBaseUrl),
@@ -236,6 +220,7 @@ function RepositoryListPage() {
       resetRepositoryData()
       return
     }
+
     void loadRepositories()
   }, [authState.status, loadRepositories, resetRepositoryData])
 
@@ -289,28 +274,16 @@ function RepositoryListPage() {
   const isMissingConfig = authState.status === 'missing_config'
   const hasSessionError = authState.status === 'error'
 
-  const isLoadingRepositories = repositoriesState.status === 'loading'
   const repositoriesLoaded = repositoriesState.status === 'success'
   const repositoriesEmpty = repositoriesState.status === 'empty'
   const repositoriesError = repositoriesState.status === 'error'
+  const repositoriesLoading = repositoriesState.status === 'loading'
   const repositories = repositoriesLoaded ? repositoriesState.repositories : []
 
   const selectedRepository = repositories.find(
     (repository) => String(repository.id) === selectedRepositoryId,
   )
-
   const canInspectRepository = Boolean(selectedRepository)
-
-  const displayName =
-    isAuthenticated && authState.user.name?.trim()
-      ? authState.user.name
-      : isAuthenticated
-        ? authState.user.login
-        : 'GitHub user'
-
-  const profileUrl = isAuthenticated
-    ? authState.user.htmlUrl || `https://github.com/${authState.user.login}`
-    : ''
 
   const handleInspectRepository = () => {
     if (!selectedRepository) {
@@ -342,11 +315,8 @@ function RepositoryListPage() {
       ) : null}
 
       {isMissingConfig ? (
-        <Card
-          title="Missing API configuration"
-          subtitle="Set a valid VITE_API_URL for this environment"
-        >
-          <p className="state-note">
+        <Card title="Missing API configuration" subtitle="Set VITE_API_URL for this environment">
+          <p className="state-note state-note-danger">
             Backend API URL is not configured for this environment.
           </p>
         </Card>
@@ -365,128 +335,110 @@ function RepositoryListPage() {
             connecting with GitHub again.
           </p>
           <div className="hero-actions">
-            <Button to="/">Back to connect</Button>
+            <Button to="/">Back to onboarding</Button>
           </div>
         </Card>
       ) : null}
 
       {isAuthenticated ? (
-        <section className="repository-selector-shell">
-          <div className="selector-connected-user">
-            <div className="selector-connected-user-main">
-              <img
-                className="identity-avatar-image"
-                src={authState.user.avatarUrl}
-                alt={`${authState.user.login} avatar`}
-                loading="lazy"
-              />
-              <div>
-                <p className="identity-name">{displayName}</p>
-                <p className="identity-meta">@{authState.user.login}</p>
-              </div>
-            </div>
-            <a className="profile-link" href={profileUrl} target="_blank" rel="noreferrer">
-              View GitHub profile
-            </a>
+        <>
+          <div className="page-topbar">
+            <p className="page-topbar-brand">RepoGuard</p>
+            <p className="page-topbar-user">@{authState.user.login} connected</p>
           </div>
 
-          <Card className="repository-selector-card">
-            <div className="repository-selector-content">
-              <h1>Choose a repository</h1>
-              <p className="page-description">
-                Select one GitHub project and RepoGuard will generate a focused report.
-              </p>
-
-              {isLoadingRepositories ? (
-                <p className="state-note selector-state-note">Loading repositories from GitHub...</p>
-              ) : null}
-
-              {repositoriesError ? (
-                <p className="state-note state-note-danger selector-state-note">
-                  {repositoriesState.error}
+          <section className="repository-selector-shell">
+            <Card className="repository-selector-card">
+              <div className="repository-selector-content">
+                <h1>Choose a repository</h1>
+                <p className="page-description">
+                  Select one GitHub project to generate a focused report.
                 </p>
-              ) : null}
 
-              {repositoriesEmpty ? (
-                <p className="state-note selector-state-note">
-                  No public repositories were returned for this account.
-                </p>
-              ) : null}
+                {repositoriesLoading ? (
+                  <p className="state-note selector-state-note">Loading repositories from GitHub...</p>
+                ) : null}
 
-              {repositoriesLoaded ? (
-                <div className="repository-dropdown" ref={dropdownRef}>
-                  <button
-                    type="button"
-                    className={`repository-dropdown-trigger ${isDropdownOpen ? 'repository-dropdown-trigger-open' : ''}`.trim()}
-                    onClick={handleToggleDropdown}
-                    aria-haspopup="listbox"
-                    aria-expanded={isDropdownOpen}
-                    aria-controls="repository-selector-listbox"
-                  >
-                    <span className="repository-dropdown-selected">
-                      {selectedRepository ? selectedRepository.fullName : 'Select repository'}
-                    </span>
-                    <span className="repository-dropdown-caret" aria-hidden="true">
-                      {isDropdownOpen ? '^' : 'v'}
-                    </span>
-                  </button>
+                {repositoriesError ? (
+                  <p className="state-note state-note-danger selector-state-note">
+                    {repositoriesState.error}
+                  </p>
+                ) : null}
 
-                  {isDropdownOpen ? (
-                    <ul
-                      id="repository-selector-listbox"
-                      className="repository-dropdown-menu"
-                      role="listbox"
-                      aria-label="GitHub repositories"
+                {repositoriesEmpty ? (
+                  <p className="state-note selector-state-note">
+                    No public repositories were returned for this account.
+                  </p>
+                ) : null}
+
+                {repositoriesLoaded ? (
+                  <div className="repository-dropdown" ref={dropdownRef}>
+                    <button
+                      type="button"
+                      className={`repository-dropdown-trigger ${isDropdownOpen ? 'repository-dropdown-trigger-open' : ''}`.trim()}
+                      onClick={handleToggleDropdown}
+                      aria-haspopup="listbox"
+                      aria-expanded={isDropdownOpen}
+                      aria-controls="repository-selector-listbox"
                     >
-                      {repositories.map((repository) => {
-                        const isSelected =
-                          String(repository.id) === selectedRepositoryId
-                        return (
-                          <li
-                            key={repository.id}
-                            role="option"
-                            aria-selected={isSelected}
-                            className={isSelected ? 'repository-option-selected' : ''}
-                          >
-                            <button
-                              type="button"
-                              className="repository-option-button"
-                              onClick={() => handleSelectRepository(repository.id)}
+                      <span className="repository-dropdown-selected">
+                        {selectedRepository ? selectedRepository.fullName : 'Select repository'}
+                      </span>
+                      <span className="repository-dropdown-caret" aria-hidden="true">
+                        {isDropdownOpen ? DROPDOWN_OPEN_CARET : DROPDOWN_CLOSED_CARET}
+                      </span>
+                    </button>
+
+                    {isDropdownOpen ? (
+                      <ul
+                        id="repository-selector-listbox"
+                        className="repository-dropdown-menu"
+                        role="listbox"
+                        aria-label="GitHub repositories"
+                      >
+                        {repositories.map((repository) => {
+                          const isSelected = String(repository.id) === selectedRepositoryId
+                          return (
+                            <li
+                              key={repository.id}
+                              role="option"
+                              aria-selected={isSelected}
+                              className={isSelected ? 'repository-option-selected' : ''}
                             >
-                              <span className="repository-option-name">
+                              <button
+                                type="button"
+                                className="repository-option-button"
+                                onClick={() => handleSelectRepository(repository.id)}
+                              >
                                 {repository.fullName}
-                              </span>
-                              <span className="repository-option-meta">
-                                {repository.language || 'Language not specified'} | Updated{' '}
-                                {formatDate(repository.pushedAt)}
-                              </span>
-                            </button>
-                          </li>
-                        )
-                      })}
-                    </ul>
-                  ) : null}
+                              </button>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div className="repository-selector-actions">
+                  <Button
+                    type="button"
+                    onClick={handleInspectRepository}
+                    disabled={!canInspectRepository}
+                    className="repository-selector-inspect-button"
+                  >
+                    Inspect repository
+                  </Button>
                 </div>
-              ) : null}
 
-              <div className="repository-selector-actions">
-                <Button
-                  type="button"
-                  onClick={handleInspectRepository}
-                  disabled={!canInspectRepository}
-                  className="repository-selector-inspect-button"
-                >
-                  Inspect repository
-                </Button>
+                <p className="repository-selector-support">
+                  RepoGuard checks repository health, maintainability and defensive security
+                  signals.
+                </p>
               </div>
-
-              <p className="repository-selector-support">
-                RepoGuard checks repository health, maintainability and defensive security
-                signals.
-              </p>
-            </div>
-          </Card>
-        </section>
+            </Card>
+          </section>
+        </>
       ) : null}
     </div>
   )

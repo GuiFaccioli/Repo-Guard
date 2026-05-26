@@ -312,32 +312,36 @@ function LandingPage() {
                               ? 'secret-files'
                               : 'readme'
                           const checkId = mappedCheckId || fallbackCheckId
+                          const learnMoreLabel =
+                            item.status === 'pass'
+                              ? 'Learn why this matters \u2197'
+                              : 'Learn how to improve this \u2197'
 
                           return (
                             <li
                               key={`${group.checklist}-${item.label}`}
                               className={`scan-result-item scan-result-item-${item.status}`.trim()}
                             >
-                              <span className="scan-result-icon" aria-hidden="true">
-                                {item.status === 'pass' ? '\u2713' : '\u2715'}
-                              </span>
-                              <span className="scan-result-copy">
-                                <span className="scan-result-label-row">
+                              <div className="scan-result-copy">
+                                <p className="scan-result-title">
+                                  <span className="scan-result-icon" aria-hidden="true">
+                                    {item.status === 'pass' ? '\u2713' : '\u2715'}
+                                  </span>
                                   <span className="scan-result-label">{item.label}</span>
-                                  <Link
-                                    className="scan-result-learn-more"
-                                    to={`/repositories/${routeRepositoryId}/checks/${checkId}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    state={{
-                                      repositoryFullName,
-                                    }}
-                                  >
-                                    Learn more {'\u2197'}
-                                  </Link>
-                                </span>
-                                <span className="scan-result-details">{item.details}</span>
-                              </span>
+                                </p>
+                                <p className="scan-result-details">{item.details}</p>
+                                <Link
+                                  className="scan-result-learn-more"
+                                  to={`/repositories/${routeRepositoryId}/checks/${checkId}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  state={{
+                                    repositoryFullName,
+                                  }}
+                                >
+                                  {learnMoreLabel}
+                                </Link>
+                              </div>
                             </li>
                           )
                         })

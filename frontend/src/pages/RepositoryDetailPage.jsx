@@ -28,56 +28,17 @@ const initialScanActionState = {
 const scanModes = [
   {
     key: 'green',
-    title: 'Green Scan',
-    subtitle: 'Basic hygiene',
-    description:
-      'Checks README, Dependabot, Actions, license and repository activity.',
-    toneClass: 'scan-mode-green',
+    label: 'Green Scan',
   },
   {
     key: 'yellow',
-    title: 'Yellow Scan',
-    subtitle: 'Quality and maintenance',
-    description:
-      'Reviews scripts, tests, documentation and maintainability signals.',
-    toneClass: 'scan-mode-yellow',
+    label: 'Yellow Scan',
   },
   {
     key: 'red',
-    title: 'Red Scan',
-    subtitle: 'Defensive security patterns',
-    description:
-      'Flags potential secret exposure and unsafe implementation patterns.',
-    toneClass: 'scan-mode-red',
+    label: 'Red Scan',
   },
 ]
-
-const scanChecksPreview = {
-  green: [
-    'README',
-    '.gitignore',
-    'package.json',
-    'Dependabot',
-    'GitHub Actions',
-    'License',
-    'Recent activity',
-    'Open issues and PRs',
-  ],
-  yellow: [
-    'Scripts (test/build/lint)',
-    'Environment template files',
-    'docs/ and src/ structure',
-    'Tests folder or test files',
-    'Lockfile and setup guidance',
-  ],
-  red: [
-    'Committed .env file patterns',
-    'Hardcoded secret-like values',
-    'Unsafe eval usage',
-    'Potential SQL string concatenation',
-    'Sensitive logs and permissive CORS patterns',
-  ],
-}
 
 function readJsonStorage(key, fallbackValue) {
   try {
@@ -465,22 +426,39 @@ function RepositoryDetailPage() {
 
   const activeSnapshot = scanSnapshots[String(repositoryId)] || null
   const activeResult = activeSnapshot?.result || null
+  const hasScanResult = Boolean(activeResult)
 
-  const failedChecks = activeResult
-    ? sortChecksBySeverity(activeResult.checks.filter((check) => !check.passed))
+  const activeChecks = Array.isArray(activeResult?.checks) ? activeResult.checks : []
+  const activeRecommendations = Array.isArray(activeResult?.recommendations)
+    ? activeResult.recommendations
+    : []
+  const activeSummary =
+    activeResult && activeResult.summary && typeof activeResult.summary === 'object'
+      ? activeResult.summary
+      : null
+
+  const failedChecks = hasScanResult
+    ? sortChecksBySeverity(activeChecks.filter((check) => !check.passed))
     : []
 
-  const plannedChecks = scanChecksPreview[selectedScanType] || []
+  const passedCount =
+    typeof activeSummary?.passed === 'number'
+      ? activeSummary.passed
+      : activeChecks.filter((check) => check.passed).length
+
+  const failedCount =
+    typeof activeSummary?.failed === 'number'
+      ? activeSummary.failed
+      : activeChecks.filter((check) => !check.passed).length
+
+  const highestSeverity =
+    typeof activeSummary?.highestSeverity === 'string'
+      ? activeSummary.highestSeverity
+      : failedChecks[0]?.severity || 'low'
 
   return (
     <div className="page repository-detail-page">
       <Card className="detail-repository-card">
-        <div className="detail-repository-header">
-          <Button to="/repositories" variant="secondary">
-            Back to repositories
-          </Button>
-        </div>
-
         {!isAuthenticated ? (
           <>
             <h1>Repository analysis</h1>
@@ -535,233 +513,243 @@ function RepositoryDetailPage() {
 
         {isAuthenticated && repositoryState.status === 'success' ? (
           <>
-            <h1>{repositoryState.repository.fullName}</h1>
-            <p className="page-description">
-              {repositoryState.repository.description ||
-                'No repository description provided.'}
-            </p>
+            {!hasScanResult ? (
+              <>
+                <p className="eyebrow">Selected project</p>
+                <h1>{repositoryState.repository.fullName}</h1>
+                <p className="page-description">
+                  {repositoryState.repository.description ||
+                    'No repository description provided.'}
+                </p>
 
-            <p className="detail-repository-meta">
-              {repositoryState.repository.language || 'Language not specified'} ·{' '}
-              {repositoryState.repository.private ? 'private' : 'public'} · last push:{' '}
-              {formatDate(repositoryState.repository.pushedAt)} ·{' '}
-              <a
-                className="profile-link"
-                href={repositoryState.repository.htmlUrl}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Open on GitHub
-              </a>
-            </p>
-          </>
-        ) : null}
-      </Card>
+                <p className="detail-repository-meta">
+                  {repositoryState.repository.language || 'Language not specified'} |{' '}
+                  {repositoryState.repository.private ? 'private' : 'public'} | Last push:{' '}
+                  {formatDate(repositoryState.repository.pushedAt)} |{' '}
+                  <a
+                    className="profile-link"
+                    href={repositoryState.repository.htmlUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Open on GitHub
+                  </a>
+                </p>
 
-      {isAuthenticated && repositoryState.status === 'success' ? (
-        <>
-          <section className="metric-grid" aria-label="Repository score summary">
-            <Card className="metric-card">
-              <p className="metric-label">Repository score</p>
-              <p className="metric-value">{activeResult ? activeResult.score : '--'}</p>
-              <p className="metric-helper">
-                {activeResult
-                  ? `Based on ${getScanTypeLabel(activeResult.scanType)}`
-                  : 'Run a scan to generate score'}
-              </p>
-            </Card>
+                <div className="scan-controls-row">
+                  <label className="scan-select-label" htmlFor="scan-mode-pre">
+                    Scan mode
+                  </label>
+                  <select
+                    id="scan-mode-pre"
+                    className="scan-select"
+                    value={selectedScanType}
+                    onChange={(event) => setSelectedScanType(event.target.value)}
+                    disabled={scanActionState.status === 'loading'}
+                  >
+                    {scanModes.map((mode) => (
+                      <option key={mode.key} value={mode.key}>
+                        {mode.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-            <Card className="metric-card">
-              <p className="metric-label">Current status</p>
-              <p className="metric-value metric-value-compact">
-                {activeResult ? activeResult.summary.highestSeverity : 'Not scanned'}
-              </p>
-              <p className="metric-helper">
-                {activeResult
-                  ? `Passed ${activeResult.summary.passed} / Failed ${activeResult.summary.failed}`
-                  : 'No diagnosis generated yet'}
-              </p>
-            </Card>
+                <div className="hero-actions">
+                  <Button
+                    type="button"
+                    onClick={() => void runScan()}
+                    disabled={scanActionState.status === 'loading'}
+                  >
+                    {scanActionState.status === 'loading'
+                      ? 'Running scan...'
+                      : 'Scan project'}
+                  </Button>
+                  <Button to="/repositories" variant="secondary">
+                    Choose another project
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="eyebrow">Project report</p>
+                <h1>{repositoryState.repository.fullName}</h1>
+                <p className="report-summary-line">
+                  Score: {activeResult.score ?? '--'} | Status:{' '}
+                  <span className={getSeverityBadgeClass(highestSeverity)}>
+                    {highestSeverity}
+                  </span>{' '}
+                  | {getScanTypeLabel(activeResult.scanType)}
+                </p>
 
-            <Card className="metric-card">
-              <p className="metric-label">Last scan</p>
-              <p className="metric-value metric-value-compact">
-                {activeResult ? getScanTypeLabel(activeResult.scanType) : 'None'}
-              </p>
-              <p className="metric-helper">
-                {activeSnapshot?.completedAt
-                  ? formatDate(activeSnapshot.completedAt)
-                  : 'Run Green Scan to start diagnosis'}
-              </p>
-            </Card>
-          </section>
+                <p className="detail-repository-meta">
+                  {repositoryState.repository.description ||
+                    'No repository description provided.'}
+                </p>
 
-          <Card
-            title="Choose analysis depth"
-            subtitle="Select a mode and run the next repository diagnosis"
-          >
-            <div className="scan-mode-grid">
-              {scanModes.map((mode) => (
-                <button
-                  key={mode.key}
-                  type="button"
-                  className={`scan-mode-card ${mode.toneClass} ${selectedScanType === mode.key ? 'scan-mode-card-active' : ''}`.trim()}
-                  onClick={() => setSelectedScanType(mode.key)}
-                >
-                  <p className="scan-mode-title">{mode.title}</p>
-                  <p className="scan-mode-subtitle">{mode.subtitle}</p>
-                  <p className="scan-mode-description">{mode.description}</p>
-                </button>
-              ))}
-            </div>
+                <p className="detail-repository-meta">
+                  Last push: {formatDate(repositoryState.repository.pushedAt)} | Last scan:{' '}
+                  {activeSnapshot?.completedAt
+                    ? formatDate(activeSnapshot.completedAt)
+                    : 'Unknown'}
+                </p>
 
-            <div className="hero-actions">
-              <Button
-                type="button"
-                onClick={() => void runScan()}
-                disabled={scanActionState.status === 'loading'}
-              >
-                {scanActionState.status === 'loading'
-                  ? 'Running scan...'
-                  : `Run ${getScanTypeLabel(selectedScanType)}`}
-              </Button>
-            </div>
+                <div className="scan-controls-row">
+                  <label className="scan-select-label" htmlFor="scan-mode-post">
+                    Scan mode
+                  </label>
+                  <select
+                    id="scan-mode-post"
+                    className="scan-select"
+                    value={selectedScanType}
+                    onChange={(event) => setSelectedScanType(event.target.value)}
+                    disabled={scanActionState.status === 'loading'}
+                  >
+                    {scanModes.map((mode) => (
+                      <option key={mode.key} value={mode.key}>
+                        {mode.label}
+                      </option>
+                    ))}
+                  </select>
+
+                  <Button
+                    type="button"
+                    onClick={() => void runScan()}
+                    disabled={scanActionState.status === 'loading'}
+                  >
+                    {scanActionState.status === 'loading'
+                      ? 'Running scan...'
+                      : `Run ${getScanTypeLabel(selectedScanType)}`}
+                  </Button>
+
+                  <Button to="/repositories" variant="secondary">
+                    Choose another project
+                  </Button>
+                </div>
+              </>
+            )}
 
             {scanActionState.status === 'error' ? (
               <p className="state-note state-note-danger">{scanActionState.error}</p>
             ) : null}
-          </Card>
+          </>
+        ) : null}
+      </Card>
 
-          {!activeResult ? (
-            <Card title="Diagnosis" subtitle="No scan result available yet">
-              <p className="state-note">
-                Run a Green Scan to generate the first diagnosis.
-              </p>
-              <div className="checks-row">
-                {plannedChecks.map((item) => (
-                  <span className="check-chip" key={item}>
-                    {item}
-                  </span>
+      {isAuthenticated && repositoryState.status === 'success' && hasScanResult ? (
+        <Card className="report-sections-card">
+          <section className="report-section">
+            <h2 className="report-section-title">What RepoGuard inspected</h2>
+            {activeChecks.length ? (
+              <ul className="scan-check-list">
+                {activeChecks.map((check) => (
+                  <li key={`inspected-${check.key}`}>
+                    <div className="scan-check-line">
+                      <span>{check.label}</span>
+                      <span className={check.passed ? 'status-ok' : 'status-failed'}>
+                        {check.passed ? 'pass' : 'fail'}
+                      </span>
+                    </div>
+                  </li>
                 ))}
-              </div>
-            </Card>
-          ) : (
-            <section className="detail-analysis-sections">
-              <div className="detail-analysis-grid">
-                <Card title="What RepoGuard inspected" className="scan-section-card">
-                  <ul className="scan-check-list">
-                    {activeResult.checks.map((check) => (
-                      <li key={check.key}>
-                        <div className="scan-check-line">
-                          <span>{check.label}</span>
-                          <span className={check.passed ? 'status-ok' : 'status-failed'}>
-                            {check.passed ? 'pass' : 'fail'}
-                          </span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </Card>
+              </ul>
+            ) : (
+              <p className="scan-check-message">No checks were returned by this scan.</p>
+            )}
+          </section>
 
-                <Card title="What RepoGuard found" className="scan-section-card">
-                  <p className="scan-meta">
-                    <span className="scan-meta-label">Scan type</span>
-                    <span>{getScanTypeLabel(activeResult.scanType)}</span>
-                  </p>
-                  <p className="scan-meta">
-                    <span className="scan-meta-label">Score</span>
-                    <span>{activeResult.score}</span>
-                  </p>
-                  <p className="scan-meta">
-                    <span className="scan-meta-label">Checks</span>
-                    <span>
-                      Passed {activeResult.summary.passed} / Failed {activeResult.summary.failed}
-                    </span>
-                  </p>
-                  <p className="scan-meta">
-                    <span className="scan-meta-label">Highest severity</span>
-                    <span className={getSeverityBadgeClass(activeResult.summary.highestSeverity)}>
-                      {activeResult.summary.highestSeverity}
-                    </span>
-                  </p>
-                </Card>
+          <section className="report-section">
+            <h2 className="report-section-title">What RepoGuard found</h2>
+            <p className="scan-check-message">
+              RepoGuard ran {getScanTypeLabel(activeResult.scanType)} and produced score{' '}
+              {activeResult.score ?? '--'}.
+            </p>
+            <p className="scan-meta">
+              <span className="scan-meta-label">Checks</span>
+              <span>
+                Passed {passedCount} / Failed {failedCount}
+              </span>
+            </p>
+            <p className="scan-meta">
+              <span className="scan-meta-label">Highest severity</span>
+              <span className={getSeverityBadgeClass(highestSeverity)}>{highestSeverity}</span>
+            </p>
+          </section>
 
-                <Card title="What needs attention" className="scan-section-card">
-                  {failedChecks.length ? (
-                    <ul className="scan-check-list">
-                      {failedChecks.map((check) => (
-                        <li key={`attention-${check.key}`}>
-                          <div className="scan-check-line">
-                            <span>{check.label}</span>
-                            <span className={getSeverityBadgeClass(check.severity)}>
-                              {check.severity}
-                            </span>
-                          </div>
-                          <p className="scan-check-message">{check.message}</p>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="scan-check-message">
-                      No failed checks in this scan.
+          <section className="report-section">
+            <h2 className="report-section-title">What needs attention</h2>
+            {failedChecks.length ? (
+              <ul className="scan-check-list">
+                {failedChecks.map((check) => (
+                  <li key={`attention-${check.key}`}>
+                    <div className="scan-check-line">
+                      <span>{check.label}</span>
+                      <span className={getSeverityBadgeClass(check.severity)}>
+                        {check.severity}
+                      </span>
+                    </div>
+                    <p className="scan-check-message">{check.message}</p>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="scan-check-message">No failed checks in this scan.</p>
+            )}
+          </section>
+
+          <section className="report-section">
+            <h2 className="report-section-title">How to fix</h2>
+            {activeRecommendations.length ? (
+              <ol className="scan-recommendations">
+                {activeRecommendations.map((item, index) => (
+                  <li key={`${item.title}-${index}`}>
+                    <p className="scan-recommendation-title">
+                      <span className={getSeverityBadgeClass(item.priority)}>
+                        {item.priority}
+                      </span>{' '}
+                      {item.title}
                     </p>
-                  )}
-                </Card>
-              </div>
+                    <p className="scan-check-message">{item.description}</p>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p className="scan-check-message">
+                No recommendations. This repository passed all checks for this scan.
+              </p>
+            )}
+          </section>
 
-              <Card title="How to fix" className="scan-section-card">
-                {activeResult.recommendations.length ? (
-                  <ol className="scan-recommendations">
-                    {activeResult.recommendations.map((item, index) => (
-                      <li key={`${item.title}-${index}`}>
-                        <p className="scan-recommendation-title">
-                          <span className={getSeverityBadgeClass(item.priority)}>
-                            {item.priority}
-                          </span>{' '}
-                          {item.title}
-                        </p>
-                        <p className="scan-check-message">{item.description}</p>
-                      </li>
-                    ))}
-                  </ol>
-                ) : (
-                  <p className="scan-check-message">
-                    No recommendations. This repository passed all checks for this scan.
-                  </p>
-                )}
-              </Card>
-
-              <Card title="Detailed checks" className="scan-section-card">
-                <div className="repository-table-wrap">
-                  <table className="repository-table repository-check-table">
-                    <thead>
-                      <tr>
-                        <th>Check</th>
-                        <th>Status</th>
-                        <th>Severity</th>
-                        <th>Message</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {activeResult.checks.map((check) => (
-                        <tr key={`detail-${check.key}`}>
-                          <td>{check.label}</td>
-                          <td>{check.passed ? 'pass' : 'fail'}</td>
-                          <td>
-                            <span className={getSeverityBadgeClass(check.severity)}>
-                              {check.severity}
-                            </span>
-                          </td>
-                          <td>{check.message}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </Card>
-            </section>
-          )}
-        </>
+          <section className="report-section">
+            <h2 className="report-section-title">Detailed checks</h2>
+            <div className="repository-table-wrap">
+              <table className="repository-table repository-check-table">
+                <thead>
+                  <tr>
+                    <th>Check</th>
+                    <th>Status</th>
+                    <th>Severity</th>
+                    <th>Message</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {activeChecks.map((check) => (
+                    <tr key={`detail-${check.key}`}>
+                      <td>{check.label}</td>
+                      <td>{check.passed ? 'pass' : 'fail'}</td>
+                      <td>
+                        <span className={getSeverityBadgeClass(check.severity)}>
+                          {check.severity}
+                        </span>
+                      </td>
+                      <td>{check.message}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </Card>
       ) : null}
     </div>
   )

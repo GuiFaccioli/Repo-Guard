@@ -851,6 +851,56 @@ a {
   line-height: 1.4;
 }
 
+.report-summary-line {
+  color: #c8d8eb;
+  font-size: 0.9rem;
+  line-height: 1.45;
+}
+
+.scan-controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.3rem;
+}
+
+.scan-select-label {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.scan-select {
+  min-height: 2.25rem;
+  border-radius: 0.6rem;
+  border: 1px solid #38506e;
+  background: rgba(17, 30, 43, 0.92);
+  color: var(--text);
+  padding: 0 0.62rem;
+  font-size: 0.88rem;
+}
+
+.scan-select:focus-visible {
+  outline: 2px solid rgba(47, 129, 247, 0.55);
+  outline-offset: 1px;
+}
+
+.report-sections-card {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.report-section + .report-section {
+  border-top: 1px solid #2d3e53;
+  padding-top: 0.85rem;
+}
+
+.report-section-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1rem;
+  margin-bottom: 0.55rem;
+}
+
 .detail-analysis-sections {
   display: grid;
   gap: 0.82rem;
@@ -941,6 +991,14 @@ a {
   .scan-meta {
     flex-direction: column;
     gap: 0.2rem;
+  }
+
+  .scan-controls-row {
+    align-items: stretch;
+  }
+
+  .scan-select {
+    width: 100%;
   }
 }
 

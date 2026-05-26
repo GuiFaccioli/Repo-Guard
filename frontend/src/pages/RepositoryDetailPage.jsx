@@ -84,6 +84,36 @@ function normalizeScanSnapshots(value) {
   return Object.fromEntries(normalizedEntries.filter((entry) => entry[1]))
 }
 
+function RepositoryCheckLearnMoreLink({ repositoryId, checkId, state }) {
+  return (
+    <Link
+      className="report-line-action"
+      to={`/repositories/${repositoryId}/checks/${checkId}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      state={state}
+    >
+      Learn more {'\u2197'}
+    </Link>
+  )
+}
+
+function RepositoryCheckRow({ prefix, label, repositoryId, checkId, state }) {
+  return (
+    <li className="report-line-row">
+      <span className="report-line-copy">
+        {prefix ? <span className="report-line-prefix">{prefix}</span> : null}
+        <span className="report-line-label">{label}</span>
+      </span>
+      <RepositoryCheckLearnMoreLink
+        repositoryId={repositoryId}
+        checkId={checkId}
+        state={state}
+      />
+    </li>
+  )
+}
+
 async function requestGreenScan(repositoriesUrl, repositoryId) {
   const requestKey = `${repositoriesUrl}|${repositoryId}|${GREEN_SCAN_TYPE}`
   const activeRequest = activeScanRequests.get(requestKey)
@@ -587,7 +617,13 @@ function RepositoryDetailPage() {
           <Card title="What RepoGuard inspected">
             <ul className="report-line-list">
               {orderedChecks.map((check) => (
-                <li key={`inspected-${check.id}`}>{check.label}</li>
+                <RepositoryCheckRow
+                  key={`inspected-${check.id}`}
+                  label={check.label}
+                  repositoryId={repositoryId}
+                  checkId={check.id}
+                  state={learnMoreState}
+                />
               ))}
             </ul>
           </Card>
@@ -596,9 +632,14 @@ function RepositoryDetailPage() {
             {correctlyConfiguredChecks.length ? (
               <ul className="report-line-list report-line-list-status-ok">
                 {correctlyConfiguredChecks.map((check) => (
-                  <li key={`ok-${check.id}`}>
-                    {STATUS_OK_PREFIX} {check.label}
-                  </li>
+                  <RepositoryCheckRow
+                    key={`ok-${check.id}`}
+                    prefix={STATUS_OK_PREFIX}
+                    label={check.label}
+                    repositoryId={repositoryId}
+                    checkId={check.id}
+                    state={learnMoreState}
+                  />
                 ))}
               </ul>
             ) : (
@@ -610,9 +651,14 @@ function RepositoryDetailPage() {
             {needsAttentionChecks.length ? (
               <ul className="report-line-list report-line-list-status-missing">
                 {needsAttentionChecks.map((check) => (
-                  <li key={`missing-${check.id}`}>
-                    {STATUS_MISSING_PREFIX} {check.label}
-                  </li>
+                  <RepositoryCheckRow
+                    key={`missing-${check.id}`}
+                    prefix={STATUS_MISSING_PREFIX}
+                    label={check.label}
+                    repositoryId={repositoryId}
+                    checkId={check.id}
+                    state={learnMoreState}
+                  />
                 ))}
               </ul>
             ) : (

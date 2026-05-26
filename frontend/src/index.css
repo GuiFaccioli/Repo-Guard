@@ -464,6 +464,43 @@ a {
   line-height: 1.42;
 }
 
+.report-line-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.9rem;
+}
+
+.report-line-copy {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.report-line-label {
+  min-width: 0;
+}
+
+.report-line-prefix {
+  flex: 0 0 auto;
+}
+
+.report-line-action {
+  flex: 0 0 auto;
+  color: #58a6ff;
+  text-decoration: underline;
+  text-decoration-color: rgba(88, 166, 255, 0.45);
+  text-underline-offset: 0.18rem;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.report-line-action:hover {
+  color: #79c0ff;
+  text-decoration-color: rgba(121, 192, 255, 0.8);
+}
+
 .report-line-list-status-ok {
   color: #b7f5cb;
 }
@@ -839,6 +876,12 @@ a {
   .scan-checklist-option,
   .scan-result-item {
     padding: 0.82rem 0.82rem;
+  }
+
+  .report-line-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.22rem;
   }
 }
 

@@ -68,6 +68,10 @@ function RepositoryListPage() {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const dropdownRef = useRef(null)
 
+  useEffect(() => {
+    document.title = 'RepoGuard · Choose repository'
+  }, [])
+
   const resetRepositoryData = useCallback(() => {
     setRepositoriesState(initialRepositoriesState)
     setSelectedRepositoryId('')

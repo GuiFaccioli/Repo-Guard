@@ -50,6 +50,10 @@ function LandingPage() {
   )
 
   useEffect(() => {
+    document.title = 'RepoGuard · Connecting GitHub'
+  }, [])
+
+  useEffect(() => {
     if (!hasValidApiConfig) {
       setAuthFlowState('missing_config')
       setAuthFlowError('')

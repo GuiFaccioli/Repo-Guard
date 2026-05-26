@@ -443,6 +443,14 @@ function RepositoryDetailPage() {
   const isAuthenticated = authState.status === 'authenticated' && authState.user
   const hasRepository = isAuthenticated && repositoryState.status === 'success'
 
+  useEffect(() => {
+    if (repositoryState.repository?.fullName) {
+      document.title = `RepoGuard · ${repositoryState.repository.fullName}`
+      return
+    }
+    document.title = 'RepoGuard · Repository report'
+  }, [repositoryState.repository])
+
   const activeResult = scanState.result
   const hasScanResult = scanState.status === 'success' && Boolean(activeResult)
   const activeChecks = Array.isArray(activeResult?.checks) ? activeResult.checks : []

@@ -47,6 +47,14 @@ function RepositoryCheckGuidePage() {
   )
 
   useEffect(() => {
+    if (guide?.label) {
+      document.title = `RepoGuard · Learn more about ${guide.label}`
+      return
+    }
+    document.title = 'RepoGuard · Learn more'
+  }, [guide])
+
+  useEffect(() => {
     if (connectedLogin || !authMeUrl) {
       return
     }

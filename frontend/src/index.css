@@ -1,17 +1,18 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap');
-
 :root {
   --bg: #0d1117;
-  --surface: #111927;
-  --surface-soft: #172338;
-  --line: #27354a;
-  --text: #d6e2f0;
-  --text-muted: #9badc3;
+  --surface: #161b22;
+  --surface-soft: #1f2631;
+  --line: #30363d;
+  --text: #c9d1d9;
+  --text-muted: #8b949e;
   --primary: #2f81f7;
-  --primary-strong: #2368cb;
-  --danger: #f07a7a;
-  --radius: 14px;
+  --primary-strong: #1f6feb;
+  --danger: #f85149;
+  --radius: 12px;
   --fixed-header-height: 3.75rem;
+  --github-font:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif,
+    'Apple Color Emoji', 'Segoe UI Emoji';
 }
 
 * {
@@ -31,7 +32,9 @@ body {
     radial-gradient(circle at 92% 0%, rgba(47, 129, 247, 0.1), transparent 28%),
     var(--bg);
   color: var(--text);
-  font-family: 'IBM Plex Sans', sans-serif;
+  font-family: var(--github-font);
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 h1,
@@ -48,16 +51,24 @@ a {
 
 .app-shell {
   min-height: 100vh;
-  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  padding: 0.75rem;
 }
 
 .app-shell-with-header {
-  padding-top: calc(var(--fixed-header-height) + 1rem);
+  padding-top: calc(var(--fixed-header-height) + 0.75rem);
 }
 
 .layout-frame {
-  width: min(980px, 100%);
+  width: min(1120px, 100%);
   margin: 0 auto;
+}
+
+.app-main {
+  flex: 1;
+  width: min(1120px, 100%);
 }
 
 .site-header {
@@ -72,7 +83,7 @@ a {
 }
 
 .site-header-inner {
-  width: min(980px, calc(100% - 2rem));
+  width: min(1120px, calc(100% - 1.5rem));
   min-height: var(--fixed-header-height);
   margin: 0 auto;
   display: flex;
@@ -94,7 +105,7 @@ a {
 }
 
 .site-header-title {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: var(--github-font);
   font-size: 1rem;
   font-weight: 600;
   letter-spacing: 0.01em;
@@ -105,10 +116,10 @@ a {
   align-items: center;
   justify-content: center;
   min-height: 2.2rem;
-  border: 1px solid #3e5370;
-  border-radius: 0.62rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
   padding: 0 0.8rem;
-  background: rgba(18, 28, 43, 0.86);
+  background: #21262d;
   color: var(--text);
   font-size: 0.84rem;
   font-weight: 600;
@@ -116,8 +127,8 @@ a {
 }
 
 .site-header-star:hover {
-  border-color: #59779f;
-  background: rgba(38, 55, 78, 0.5);
+  border-color: #8b949e;
+  background: #30363d;
 }
 
 .site-header-star:focus-visible {
@@ -131,8 +142,8 @@ a {
 }
 
 .page h1 {
-  font-family: 'Space Grotesk', sans-serif;
-  font-size: clamp(1.45rem, 2.7vw, 1.95rem);
+  font-family: var(--github-font);
+  font-size: clamp(1.35rem, 2.35vw, 1.9rem);
   letter-spacing: -0.01em;
 }
 
@@ -144,12 +155,12 @@ a {
 .card {
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: rgba(17, 25, 39, 0.92);
+  background: var(--surface);
   padding: 1.05rem;
 }
 
 .card-title {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: var(--github-font);
   font-size: 1rem;
   margin-bottom: 0.22rem;
 }
@@ -185,11 +196,11 @@ a {
 .button-secondary {
   background: transparent;
   color: var(--text);
-  border-color: #3e5370;
+  border-color: var(--line);
 }
 
 .button-secondary:hover {
-  background: rgba(38, 55, 78, 0.38);
+  background: rgba(177, 186, 196, 0.08);
 }
 
 .button-disabled,
@@ -242,7 +253,7 @@ a {
 }
 
 .onboarding-brand {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: var(--github-font);
   font-size: 1.15rem;
   letter-spacing: 0.01em;
 }
@@ -250,7 +261,7 @@ a {
 .page-topbar {
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: rgba(17, 25, 39, 0.88);
+  background: var(--surface);
   padding: 0.72rem 0.95rem;
   display: flex;
   align-items: center;
@@ -259,7 +270,7 @@ a {
 }
 
 .page-topbar-brand {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: var(--github-font);
   font-size: 1rem;
 }
 
@@ -306,8 +317,8 @@ a {
   width: 100%;
   min-height: 2.85rem;
   border-radius: 0.75rem;
-  border: 1px solid #365071;
-  background: rgba(13, 21, 32, 0.92);
+  border: 1px solid var(--line);
+  background: #0d1117;
   color: var(--text);
   padding: 0.58rem 0.78rem;
   display: flex;
@@ -318,7 +329,7 @@ a {
 }
 
 .repository-dropdown-trigger:hover {
-  border-color: #4f6d92;
+  border-color: #8b949e;
 }
 
 .repository-dropdown-trigger:focus-visible,
@@ -328,7 +339,7 @@ a {
 }
 
 .repository-dropdown-trigger-open {
-  border-color: rgba(47, 129, 247, 0.85);
+  border-color: var(--primary);
 }
 
 .repository-dropdown-selected {
@@ -340,16 +351,16 @@ a {
 
 .repository-dropdown-caret {
   font-size: 0.78rem;
-  color: #a9bed7;
+  color: var(--text-muted);
 }
 
 .repository-dropdown-menu {
   list-style: none;
   margin: 0.32rem 0 0;
   padding: 0.24rem;
-  border: 1px solid #365071;
+  border: 1px solid var(--line);
   border-radius: 0.75rem;
-  background: #111b2a;
+  background: #161b22;
   max-height: 270px;
   overflow-y: auto;
   display: grid;
@@ -369,12 +380,12 @@ a {
 }
 
 .repository-option-button:hover {
-  background: rgba(47, 129, 247, 0.14);
+  background: rgba(47, 129, 247, 0.12);
 }
 
 .repository-option-selected .repository-option-button {
-  border-color: rgba(47, 129, 247, 0.58);
-  background: rgba(47, 129, 247, 0.17);
+  border-color: rgba(47, 129, 247, 0.5);
+  background: rgba(47, 129, 247, 0.15);
 }
 
 .repository-selector-actions {
@@ -427,7 +438,7 @@ a {
 }
 
 .scan-state-title {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: var(--github-font);
   font-size: 1.2rem;
 }
 
@@ -449,16 +460,16 @@ a {
   padding-left: 1.1rem;
   display: grid;
   gap: 0.34rem;
-  color: #c7d6e8;
+  color: var(--text);
   line-height: 1.42;
 }
 
 .report-line-list-status-ok {
-  color: #cbeedb;
+  color: #b7f5cb;
 }
 
 .report-line-list-status-missing {
-  color: #ffd0d0;
+  color: #ffc9c5;
 }
 
 .scan-numbered-list {
@@ -466,10 +477,10 @@ a {
 }
 
 .repository-table-wrap {
-  border: 1px solid #2d3f57;
+  border: 1px solid var(--line);
   border-radius: 0.76rem;
   overflow-x: auto;
-  background: rgba(12, 19, 28, 0.9);
+  background: #0d1117;
 }
 
 .repository-table {
@@ -481,41 +492,41 @@ a {
 .repository-table thead th {
   text-align: left;
   font-size: 0.78rem;
-  color: #9eb5cf;
+  color: var(--text-muted);
   letter-spacing: 0.01em;
   padding: 0.74rem 0.78rem;
-  border-bottom: 1px solid #2d3f57;
+  border-bottom: 1px solid var(--line);
 }
 
 .repository-table tbody td {
   padding: 0.74rem 0.78rem;
-  border-top: 1px solid rgba(45, 63, 87, 0.72);
-  color: #c4d2e4;
+  border-top: 1px solid var(--line);
+  color: var(--text);
   font-size: 0.84rem;
   vertical-align: top;
 }
 
 .check-status-ok {
-  color: #cbeedb;
+  color: #b7f5cb;
   white-space: nowrap;
 }
 
 .check-status-missing {
-  color: #ffd0d0;
+  color: #ffc9c5;
   white-space: nowrap;
 }
 
 .table-action-link {
-  color: #a7d0ff;
+  color: #58a6ff;
   text-decoration: underline;
-  text-decoration-color: rgba(167, 208, 255, 0.5);
+  text-decoration-color: rgba(88, 166, 255, 0.45);
   text-underline-offset: 0.18rem;
   font-size: 0.82rem;
 }
 
 .table-action-link:hover {
-  color: #cae4ff;
-  text-decoration-color: rgba(202, 228, 255, 0.8);
+  color: #79c0ff;
+  text-decoration-color: rgba(121, 192, 255, 0.8);
 }
 
 .repository-guide-card {
@@ -524,7 +535,7 @@ a {
 }
 
 .repository-guide-card h2 {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: var(--github-font);
   font-size: 1.25rem;
 }
 
@@ -539,13 +550,13 @@ a {
 }
 
 .repository-guide-section h3 {
-  font-family: 'Space Grotesk', sans-serif;
+  font-family: var(--github-font);
   font-size: 0.96rem;
 }
 
 .repository-guide-section p,
 .repository-guide-steps li {
-  color: #c5d4e7;
+  color: var(--text);
   line-height: 1.45;
 }
 
@@ -553,6 +564,22 @@ a {
   margin: 0;
   display: grid;
   gap: 0.34rem;
+}
+
+.site-footer {
+  border-top: 1px solid var(--line);
+  background: rgba(13, 17, 23, 0.94);
+}
+
+.site-footer-inner {
+  min-height: 3.25rem;
+  display: flex;
+  align-items: center;
+}
+
+.site-footer-brand {
+  color: var(--text-muted);
+  font-size: 0.82rem;
 }
 
 @media (max-width: 780px) {
@@ -565,7 +592,7 @@ a {
   }
 
   .site-header-inner {
-    width: calc(100% - 1.5rem);
+    width: calc(100% - 1rem);
   }
 
   .site-header-title {
@@ -599,5 +626,9 @@ a {
   .repository-option-button,
   .button {
     min-height: 2.8rem;
+  }
+
+  .site-footer-inner {
+    min-height: 2.9rem;
   }
 }

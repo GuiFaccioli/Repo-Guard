@@ -8,9 +8,14 @@ function AppLayout() {
   return (
     <div className={`app-shell ${showHeader ? 'app-shell-with-header' : ''}`.trim()}>
       {showHeader ? <Header /> : null}
-      <div className="layout-frame">
+      <main className="layout-frame app-main">
         <Outlet />
-      </div>
+      </main>
+      <footer className="site-footer" aria-label="Footer">
+        <div className="layout-frame site-footer-inner">
+          <p className="site-footer-brand">RepoGuard</p>
+        </div>
+      </footer>
     </div>
   )
 }

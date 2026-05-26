@@ -160,6 +160,11 @@ Phase 4:
 Phase 5:
 - render AI Review report in frontend.
 
+Phase 2 status (May 26, 2026):
+- Safe Evidence Packet builder implemented in backend.
+- AI Review Agent is still not implemented.
+- MCP integration is still not implemented.
+
 ## 11. Open Questions
 - Should AI Review be generated on every scan or only on demand?
 - Should AI Review be cached?

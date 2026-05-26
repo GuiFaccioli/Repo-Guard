@@ -7,12 +7,14 @@ import {
 } from '@nestjs/common';
 import {
   ParsedRepositoryTarget,
+  SafeEvidencePacket,
   ScanChecklistId,
   ScanChecklistItem,
   ScanChecklistResult,
   ScanProvider,
   ScanRepositoryResponse,
 } from './scans.types';
+import { buildSafeEvidencePacket } from './safe-evidence-packet';
 
 interface NormalizedScanRequest {
   repositoryUrl: string;
@@ -157,10 +159,19 @@ export class ScansService {
         }
       }
 
+      const evidencePacket: SafeEvidencePacket = buildSafeEvidencePacket({
+        repository: target,
+        defaultBranch: repositorySnapshot.defaultBranch,
+        scanType: 'green',
+        createdAt: new Date().toISOString(),
+        results: selectedResults,
+      });
+
       return {
         repository: target,
         selectedChecklists: request.checklists,
         results: selectedResults,
+        evidencePacket,
       };
     } catch (error) {
       if (

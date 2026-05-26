@@ -1,43 +1,26 @@
-import { NavLink } from 'react-router-dom'
-
-const navItems = [
-  { to: '/', label: 'Connect' },
-  { to: '/repositories', label: 'Dashboard' },
-  { to: '/auth/callback', label: 'OAuth Flow' },
-]
-
 function Header() {
   return (
     <header className="site-header">
-      <div className="brand">
-        <span className="brand-icon" aria-hidden="true">
-          RG
-        </span>
-        <div>
-          <p className="brand-name">RepoGuard</p>
-          <p className="brand-tagline">GitHub-first repository health tool</p>
+      <div className="site-header-inner">
+        <div className="site-header-brand">
+          <img
+            src="/favicon.png"
+            alt=""
+            aria-hidden="true"
+            className="site-header-logo"
+          />
+          <p className="site-header-title">Repo-Guard</p>
         </div>
+
+        <a
+          className="site-header-star"
+          href="https://github.com/GuiFaccioli/Repo-Guard"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {'\u2606'} Star this project
+        </a>
       </div>
-
-      <p className="header-status">Frontend foundation</p>
-
-      <nav aria-label="Main navigation">
-        <ul className="nav-list">
-          {navItems.map((item) => (
-            <li key={item.to}>
-              <NavLink
-                to={item.to}
-                end={item.to === '/'}
-                className={({ isActive }) =>
-                  isActive ? 'nav-link nav-link-active' : 'nav-link'
-                }
-              >
-                {item.label}
-              </NavLink>
-            </li>
-          ))}
-        </ul>
-      </nav>
     </header>
   )
 }

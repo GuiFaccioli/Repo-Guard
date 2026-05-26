@@ -11,6 +11,7 @@
   --primary-strong: #2368cb;
   --danger: #f07a7a;
   --radius: 14px;
+  --fixed-header-height: 3.75rem;
 }
 
 * {
@@ -50,13 +51,78 @@ a {
   padding: 1rem;
 }
 
+.app-shell-with-header {
+  padding-top: calc(var(--fixed-header-height) + 1rem);
+}
+
 .layout-frame {
   width: min(980px, 100%);
   margin: 0 auto;
 }
 
 .site-header {
-  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  border-bottom: 1px solid var(--line);
+  background: rgba(13, 17, 23, 0.95);
+  backdrop-filter: blur(8px);
+}
+
+.site-header-inner {
+  width: min(980px, calc(100% - 2rem));
+  min-height: var(--fixed-header-height);
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+}
+
+.site-header-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.site-header-logo {
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 0.35rem;
+}
+
+.site-header-title {
+  font-family: 'Space Grotesk', sans-serif;
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.site-header-star {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.2rem;
+  border: 1px solid #3e5370;
+  border-radius: 0.62rem;
+  padding: 0 0.8rem;
+  background: rgba(18, 28, 43, 0.86);
+  color: var(--text);
+  font-size: 0.84rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.site-header-star:hover {
+  border-color: #59779f;
+  background: rgba(38, 55, 78, 0.5);
+}
+
+.site-header-star:focus-visible {
+  outline: 2px solid rgba(47, 129, 247, 0.65);
+  outline-offset: 1px;
 }
 
 .page {
@@ -492,6 +558,24 @@ a {
 @media (max-width: 780px) {
   .app-shell {
     padding: 0.75rem;
+  }
+
+  .app-shell-with-header {
+    padding-top: calc(var(--fixed-header-height) + 0.75rem);
+  }
+
+  .site-header-inner {
+    width: calc(100% - 1.5rem);
+  }
+
+  .site-header-title {
+    font-size: 0.95rem;
+  }
+
+  .site-header-star {
+    min-height: 2rem;
+    font-size: 0.78rem;
+    padding: 0 0.62rem;
   }
 
   .page-topbar {

@@ -656,9 +656,11 @@ function RepositoryDetailPage() {
                         <Link
                           className="table-action-link"
                           to={`/repositories/${repositoryId}/checks/${check.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
                           state={learnMoreState}
                         >
-                          [Learn more]
+                          Learn more ↗
                         </Link>
                       </td>
                       <td>

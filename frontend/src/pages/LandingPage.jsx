@@ -2,7 +2,10 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import Button from '../components/Button'
 import Card from '../components/Card'
-import { resolveRepositoryCheckId } from '../data/repositoryCheckGuides'
+import {
+  CODE_SAFETY_CHECK_IDS,
+  resolveRepositoryCheckId,
+} from '../data/repositoryCheckGuides'
 import { buildBackendUrl, normalizeApiBaseUrl } from '../utils/apiUrl'
 import { normalizeRepositoryUrl } from '../utils/repositoryUrl'
 
@@ -23,6 +26,29 @@ const initialScanState = {
   status: 'idle',
   result: null,
   error: '',
+}
+
+const SAFE_SCAN_EVIDENCE_CACHE_KEY = 'repoguard.safeScanEvidence.v1'
+
+function readJsonStorage(key, fallbackValue) {
+  try {
+    const rawValue = window.sessionStorage.getItem(key)
+    if (!rawValue) {
+      return fallbackValue
+    }
+
+    return JSON.parse(rawValue)
+  } catch {
+    return fallbackValue
+  }
+}
+
+function writeJsonStorage(key, value) {
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // Ignore storage write failures to keep scan rendering stable.
+  }
 }
 
 function buildGuideRouteRepositoryId(repository) {
@@ -100,6 +126,80 @@ function LandingPage() {
   const canStartScan =
     Boolean(scansUrl && isRepositoryUrlValid && hasChecklistSelection) &&
     scanState.status !== 'loading'
+
+  useEffect(() => {
+    if (scanState.status !== 'success' || !scanState.result) {
+      return
+    }
+
+    const resultGroups = Array.isArray(scanState.result.results)
+      ? scanState.result.results
+      : []
+    const repositoryEvidenceChecks = {}
+
+    for (const group of resultGroups) {
+      if (group?.checklist !== 'security_basics' || !Array.isArray(group.items)) {
+        continue
+      }
+
+      for (const item of group.items) {
+        const resolvedCheckId = resolveRepositoryCheckId({
+          label: item?.label,
+        })
+
+        if (!resolvedCheckId || !CODE_SAFETY_CHECK_IDS.has(resolvedCheckId)) {
+          continue
+        }
+
+        const safeEvidence = {
+          checklist: 'security_basics',
+          checkId: resolvedCheckId,
+          label: typeof item?.label === 'string' ? item.label : '',
+          status: item?.status === 'pass' ? 'pass' : 'fail',
+          details: typeof item?.details === 'string' ? item.details : '',
+          filePath:
+            typeof item?.filePath === 'string' && item.filePath.trim()
+              ? item.filePath.trim()
+              : null,
+          lineNumber:
+            Number.isFinite(item?.lineNumber) && Number(item.lineNumber) > 0
+              ? Math.floor(Number(item.lineNumber))
+              : null,
+          codeExcerpt:
+            typeof item?.codeExcerpt === 'string' && item.codeExcerpt.trim()
+              ? item.codeExcerpt.trim().slice(0, 220)
+              : null,
+        }
+
+        repositoryEvidenceChecks[resolvedCheckId] = safeEvidence
+      }
+    }
+
+    const previousCache = readJsonStorage(SAFE_SCAN_EVIDENCE_CACHE_KEY, {})
+    const previousRepositories =
+      previousCache &&
+      typeof previousCache === 'object' &&
+      !Array.isArray(previousCache) &&
+      previousCache.repositories &&
+      typeof previousCache.repositories === 'object' &&
+      !Array.isArray(previousCache.repositories)
+        ? previousCache.repositories
+        : {}
+
+    const repositoryKey = routeRepositoryId
+    const nextCache = {
+      repositories: {
+        ...previousRepositories,
+        [repositoryKey]: {
+          repositoryFullName,
+          checks: repositoryEvidenceChecks,
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    }
+
+    writeJsonStorage(SAFE_SCAN_EVIDENCE_CACHE_KEY, nextCache)
+  }, [repositoryFullName, routeRepositoryId, scanState.result, scanState.status])
 
   useEffect(() => {
     document.title = 'RepoGuard · Scan repository'
@@ -331,8 +431,13 @@ function LandingPage() {
                               ? 'hardcoded-secret'
                               : 'readme'
                           const checkId = mappedCheckId || fallbackCheckId
-                          const learnMoreLabel =
-                            item.status === 'pass'
+                          const isPassed = item.status === 'pass'
+                          const isCodeSafetySignal = group.checklist === 'security_basics'
+                          const learnMoreLabel = isCodeSafetySignal
+                            ? isPassed
+                              ? 'Learn why this matters \u2197'
+                              : 'What\u2019s wrong? \u2197'
+                            : isPassed
                               ? 'Learn why this matters \u2197'
                               : 'Learn how to improve this \u2197'
 
@@ -362,6 +467,23 @@ function LandingPage() {
                                   rel="noopener noreferrer"
                                   state={{
                                     repositoryFullName,
+                                    checklistId: group.checklist,
+                                    checkStatus: item.status,
+                                    checkLabel: item.label,
+                                    filePath:
+                                      typeof item.filePath === 'string' && item.filePath.trim()
+                                        ? item.filePath.trim()
+                                        : null,
+                                    lineNumber:
+                                      Number.isFinite(item.lineNumber) &&
+                                      Number(item.lineNumber) > 0
+                                        ? Math.floor(Number(item.lineNumber))
+                                        : null,
+                                    codeExcerpt:
+                                      typeof item.codeExcerpt === 'string' &&
+                                      item.codeExcerpt.trim()
+                                        ? item.codeExcerpt.trim().slice(0, 220)
+                                        : null,
                                   }}
                                 >
                                   {learnMoreLabel}

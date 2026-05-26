@@ -603,6 +603,24 @@ a {
   gap: 0.34rem;
 }
 
+.repository-guide-code-block {
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 0.7rem;
+  background: #0d1117;
+  padding: 0.78rem 0.85rem;
+  overflow-x: auto;
+}
+
+.repository-guide-code-block code {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .scan-page {
   display: grid;
   gap: 1rem;

@@ -34,6 +34,8 @@ interface FetchResponsePayload {
 
 interface PatternMatch {
   path: string;
+  lineNumber?: number;
+  codeExcerpt?: string;
 }
 
 const SUPPORTED_CHECKLISTS: ScanChecklistId[] = [
@@ -121,6 +123,7 @@ const ISSUE_THRESHOLD = 25;
 const PULL_REQUEST_THRESHOLD = 10;
 const RECENT_ACTIVITY_DAYS = 90;
 const MAX_SECURITY_SAMPLES = 64;
+const MAX_EVIDENCE_LINE_LENGTH = 200;
 
 @Injectable()
 export class ScansService {
@@ -628,8 +631,8 @@ export class ScansService {
         ? {
             label: 'Possible hardcoded secret',
             status: 'fail',
-            filePath: hardcodedSecretMatch.path,
             details: 'A secret-like value appears to be written directly in code.',
+            ...this.buildEvidenceItem(hardcodedSecretMatch),
           }
         : {
             label: 'Possible hardcoded secret',
@@ -646,6 +649,7 @@ export class ScansService {
             status: 'fail',
             filePath: envFileMatch,
             details: 'Environment files can expose private configuration.',
+            codeExcerpt: '.env file detected. Content intentionally hidden.',
           }
         : {
             label: 'Environment file committed',
@@ -663,8 +667,8 @@ export class ScansService {
         ? {
             label: 'SQL query built with string concatenation',
             status: 'fail',
-            filePath: sqlConcatMatch.path,
             details: 'SQL query appears to be built with dynamic string content.',
+            ...this.buildEvidenceItem(sqlConcatMatch),
           }
         : {
             label: 'SQL query built with string concatenation',
@@ -680,8 +684,8 @@ export class ScansService {
         ? {
             label: 'No eval usage detected',
             status: 'fail',
-            filePath: evalMatch.path,
             details: 'Dynamic code execution pattern detected.',
+            ...this.buildEvidenceItem(evalMatch),
           }
         : {
             label: 'No eval usage detected',
@@ -702,15 +706,15 @@ export class ScansService {
       items.push({
         label: 'Permissive CORS configuration',
         status: 'fail',
-        filePath: wildcardCorsMatch.path,
         details: 'API may be accepting requests from any origin.',
+        ...this.buildEvidenceItem(wildcardCorsMatch),
       });
     } else if (defaultCorsMatch) {
       items.push({
         label: 'Permissive CORS configuration',
         status: 'fail',
-        filePath: defaultCorsMatch.path,
         details: 'CORS configuration may need review.',
+        ...this.buildEvidenceItem(defaultCorsMatch),
       });
     } else {
       items.push({
@@ -740,6 +744,38 @@ export class ScansService {
     };
   }
 
+  private buildEvidenceItem(match: PatternMatch | null): {
+    filePath?: string;
+    lineNumber?: number;
+    codeExcerpt?: string;
+  } {
+    if (!match?.path) {
+      return {};
+    }
+
+    const evidence: {
+      filePath?: string;
+      lineNumber?: number;
+      codeExcerpt?: string;
+    } = {
+      filePath: match.path,
+    };
+
+    if (
+      typeof match.lineNumber === 'number' &&
+      Number.isFinite(match.lineNumber) &&
+      match.lineNumber > 0
+    ) {
+      evidence.lineNumber = Math.floor(match.lineNumber);
+    }
+
+    if (typeof match.codeExcerpt === 'string' && match.codeExcerpt.trim()) {
+      evidence.codeExcerpt = this.clampEvidenceLine(match.codeExcerpt);
+    }
+
+    return evidence;
+  }
+
   private findCommittedEnvFile(paths: Set<string>): string | null {
     const sortedPaths = Array.from(paths).sort();
 
@@ -760,7 +796,8 @@ export class ScansService {
     for (const sample of samples) {
       const lines = sample.content.split(/\r?\n/);
 
-      for (const rawLine of lines) {
+      for (let index = 0; index < lines.length; index += 1) {
+        const rawLine = lines[index];
         const line = rawLine.trim();
         if (!line || this.isCommentLine(line)) {
           continue;
@@ -789,7 +826,16 @@ export class ScansService {
           continue;
         }
 
-        return { path: sample.path };
+        const maskedLine = line.replace(
+          assignedValue,
+          this.maskSecretValue(assignedValue),
+        );
+
+        return {
+          path: sample.path,
+          lineNumber: index + 1,
+          codeExcerpt: this.clampEvidenceLine(maskedLine),
+        };
       }
     }
 
@@ -801,12 +847,96 @@ export class ScansService {
     patterns: RegExp[],
   ): PatternMatch | null {
     for (const sample of samples) {
-      if (patterns.some((pattern) => pattern.test(sample.content))) {
-        return { path: sample.path };
+      for (const pattern of patterns) {
+        const match = this.findPatternEvidence(sample.content, pattern);
+        if (match) {
+          return {
+            path: sample.path,
+            lineNumber: match.lineNumber,
+            codeExcerpt: match.codeExcerpt,
+          };
+        }
       }
     }
 
     return null;
+  }
+
+  private findPatternEvidence(
+    content: string,
+    pattern: RegExp,
+  ): { lineNumber?: number; codeExcerpt?: string } | null {
+    const matcher = new RegExp(pattern.source, pattern.flags);
+    const match = matcher.exec(content);
+
+    if (!match || typeof match.index !== 'number') {
+      return null;
+    }
+
+    const lineNumber = this.findLineNumberByIndex(content, match.index);
+    const lineText = this.readLineByNumber(content, lineNumber);
+
+    return {
+      lineNumber,
+      codeExcerpt: lineText ? this.clampEvidenceLine(lineText) : undefined,
+    };
+  }
+
+  private findLineNumberByIndex(content: string, index: number): number {
+    if (index <= 0) {
+      return 1;
+    }
+
+    const prefix = content.slice(0, index);
+    return prefix.split(/\r?\n/).length;
+  }
+
+  private readLineByNumber(content: string, lineNumber: number): string {
+    if (!Number.isFinite(lineNumber) || lineNumber < 1) {
+      return '';
+    }
+
+    const lines = content.split(/\r?\n/);
+    return lines[lineNumber - 1]?.trim() || '';
+  }
+
+  private maskSecretValue(value: string): string {
+    const normalizedValue = value.trim();
+    if (!normalizedValue) {
+      return '********';
+    }
+
+    const stripePrefix = normalizedValue.match(/^sk_(?:live|test)_/i)?.[0];
+    if (stripePrefix) {
+      return `${stripePrefix}********`;
+    }
+
+    const githubPrefix = normalizedValue.match(/^(?:ghp_|github_pat_)/i)?.[0];
+    if (githubPrefix) {
+      return `${githubPrefix}********`;
+    }
+
+    const awsPrefix = normalizedValue.match(/^AKIA/i)?.[0];
+    if (awsPrefix) {
+      return `${awsPrefix}********`;
+    }
+
+    const visiblePrefixLength = Math.min(4, normalizedValue.length);
+    const visiblePrefix = normalizedValue.slice(0, visiblePrefixLength);
+    return `${visiblePrefix}********`;
+  }
+
+  private clampEvidenceLine(line: string): string {
+    const compactLine = line.replace(/\t/g, '  ').trim();
+    if (!compactLine) {
+      return '';
+    }
+
+    if (compactLine.length <= MAX_EVIDENCE_LINE_LENGTH) {
+      return compactLine;
+    }
+
+    return `${compactLine.slice(0, MAX_EVIDENCE_LINE_LENGTH - 3)}...`;
   }
 
   private isCodeSafetySamplePath(path: string): boolean {

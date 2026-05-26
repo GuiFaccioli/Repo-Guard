@@ -15,6 +15,8 @@ export interface ScanChecklistItem {
   status: ScanItemStatus;
   details: string;
   filePath?: string;
+  lineNumber?: number;
+  codeExcerpt?: string;
 }
 
 export interface ScanChecklistResult {

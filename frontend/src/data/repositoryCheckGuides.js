@@ -247,6 +247,14 @@ const ADDITIONAL_REPOSITORY_CHECK_GUIDES = [
   },
 ]
 
+export const CODE_SAFETY_CHECK_IDS = new Set([
+  'hardcoded-secret',
+  'committed-env-file',
+  'sql-string-concatenation',
+  'eval-usage',
+  'permissive-cors',
+])
+
 const checkAliasMap = {
   readme: 'readme',
   readmeexists: 'readme',
@@ -308,6 +316,10 @@ export function resolveRepositoryCheckId(check) {
   }
 
   return null
+}
+
+export function isCodeSafetyCheckId(checkId) {
+  return CODE_SAFETY_CHECK_IDS.has(String(checkId || '').trim())
 }
 
 export function getRepositoryCheckGuideById(checkId) {

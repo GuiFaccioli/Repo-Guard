@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import Button from '../components/Button'
 import Card from '../components/Card'
@@ -6,7 +6,9 @@ import { buildBackendUrl, normalizeApiBaseUrl } from '../utils/apiUrl'
 
 const SCAN_CACHE_KEY = 'repoguard.scanResults.v1'
 const REPOSITORY_CACHE_KEY = 'repoguard.repositories.v1'
-const PREFERRED_SCAN_KEY = 'repoguard.preferredScan.v1'
+const GREEN_SCAN_TYPE = 'green'
+const UNAUTHORIZED_SCAN_ERROR = 'unauthenticated_scan_request'
+const activeScanRequests = new Map()
 
 const initialAuthState = {
   status: 'loading',
@@ -20,25 +22,12 @@ const initialRepositoryState = {
   error: '',
 }
 
-const initialScanActionState = {
+const initialScanState = {
   status: 'idle',
+  result: null,
+  completedAt: null,
   error: '',
 }
-
-const scanModes = [
-  {
-    key: 'green',
-    label: 'Green Scan',
-  },
-  {
-    key: 'yellow',
-    label: 'Yellow Scan',
-  },
-  {
-    key: 'red',
-    label: 'Red Scan',
-  },
-]
 
 function readJsonStorage(key, fallbackValue) {
   try {
@@ -131,6 +120,51 @@ function sortChecksBySeverity(checks) {
     .sort((a, b) => (weight[b.severity] || 0) - (weight[a.severity] || 0))
 }
 
+async function requestGreenScan(repositoriesUrl, repositoryId) {
+  const requestKey = `${repositoriesUrl}|${repositoryId}|${GREEN_SCAN_TYPE}`
+  const activeRequest = activeScanRequests.get(requestKey)
+  if (activeRequest) {
+    return activeRequest
+  }
+
+  const requestPromise = (async () => {
+    const response = await fetch(`${repositoriesUrl}/${repositoryId}/scans`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        scanType: GREEN_SCAN_TYPE,
+      }),
+    })
+
+    if (response.status === 401) {
+      const unauthorizedError = new Error(UNAUTHORIZED_SCAN_ERROR)
+      unauthorizedError.name = UNAUTHORIZED_SCAN_ERROR
+      throw unauthorizedError
+    }
+
+    if (!response.ok) {
+      const payload = await response
+        .json()
+        .catch(() => ({ message: 'Could not run repository scan.' }))
+      throw new Error(payload?.message || 'Could not run repository scan.')
+    }
+
+    return response.json()
+  })()
+
+  activeScanRequests.set(requestKey, requestPromise)
+
+  try {
+    return await requestPromise
+  } finally {
+    activeScanRequests.delete(requestKey)
+  }
+}
+
 function RepositoryDetailPage() {
   const { id } = useParams()
   const repositoryId = Number(id)
@@ -159,16 +193,9 @@ function RepositoryDetailPage() {
 
   const [authState, setAuthState] = useState(initialAuthState)
   const [repositoryState, setRepositoryState] = useState(initialRepositoryState)
-  const [scanActionState, setScanActionState] = useState(initialScanActionState)
-  const [selectedScanType, setSelectedScanType] = useState(() => {
-    const savedMode = readJsonStorage(PREFERRED_SCAN_KEY, 'green')
-    return savedMode === 'green' || savedMode === 'yellow' || savedMode === 'red'
-      ? savedMode
-      : 'green'
-  })
-  const [scanSnapshots, setScanSnapshots] = useState(() =>
-    normalizeScanSnapshots(readJsonStorage(SCAN_CACHE_KEY, {})),
-  )
+  const [scanState, setScanState] = useState(initialScanState)
+  const autoScanRepositoryRef = useRef(null)
+  const latestScanRequestRef = useRef(0)
 
   const loadSession = useCallback(async () => {
     if (!authMeUrl) {
@@ -178,6 +205,7 @@ function RepositoryDetailPage() {
         error: '',
       })
       setRepositoryState(initialRepositoryState)
+      setScanState(initialScanState)
       return
     }
 
@@ -216,6 +244,7 @@ function RepositoryDetailPage() {
         error: '',
       })
       setRepositoryState(initialRepositoryState)
+      setScanState(initialScanState)
     } catch {
       setAuthState({
         status: 'error',
@@ -224,6 +253,7 @@ function RepositoryDetailPage() {
           'Could not verify your GitHub session. Check backend availability and try again.',
       })
       setRepositoryState(initialRepositoryState)
+      setScanState(initialScanState)
     }
   }, [authMeUrl])
 
@@ -323,83 +353,85 @@ function RepositoryDetailPage() {
     }
   }, [hasValidRepositoryId, repositoriesUrl, repositoryId])
 
-  const runScan = useCallback(async () => {
+  const runGreenScan = useCallback(async () => {
     if (!hasValidRepositoryId) {
-      setScanActionState({
+      setScanState({
         status: 'error',
+        result: null,
+        completedAt: null,
         error: 'Invalid repository id in route.',
       })
       return
     }
 
     if (!repositoriesUrl) {
-      setScanActionState({
+      setScanState({
         status: 'error',
+        result: null,
+        completedAt: null,
         error: 'Backend API URL is not configured for this environment.',
       })
       return
     }
 
-    setScanActionState({
+    const requestId = latestScanRequestRef.current + 1
+    latestScanRequestRef.current = requestId
+
+    setScanState({
       status: 'loading',
+      result: null,
+      completedAt: null,
       error: '',
     })
 
     try {
-      const response = await fetch(`${repositoriesUrl}/${repositoryId}/scans`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: {
-          Accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          scanType: selectedScanType,
-        }),
+      const scanResult = await requestGreenScan(repositoriesUrl, repositoryId)
+      if (latestScanRequestRef.current !== requestId) {
+        return
+      }
+
+      const completedAt = new Date().toISOString()
+      setScanState({
+        status: 'success',
+        result: scanResult,
+        completedAt,
+        error: '',
       })
 
-      if (response.status === 401) {
+      const existingSnapshots = normalizeScanSnapshots(readJsonStorage(SCAN_CACHE_KEY, {}))
+      const nextSnapshots = {
+        ...existingSnapshots,
+        [String(repositoryId)]: {
+          result: scanResult,
+          completedAt,
+        },
+      }
+      writeJsonStorage(SCAN_CACHE_KEY, nextSnapshots)
+    } catch (error) {
+      if (latestScanRequestRef.current !== requestId) {
+        return
+      }
+
+      if (error instanceof Error && error.name === UNAUTHORIZED_SCAN_ERROR) {
         setAuthState({
           status: 'unauthenticated',
           user: null,
           error: '',
         })
         setRepositoryState(initialRepositoryState)
-        setScanActionState(initialScanActionState)
+        setScanState(initialScanState)
         return
       }
 
-      if (!response.ok) {
-        const payload = await response
-          .json()
-          .catch(() => ({ message: 'Could not run repository scan.' }))
-        throw new Error(payload?.message || 'Could not run repository scan.')
-      }
-
-      const scanResult = await response.json()
-      const nextSnapshots = {
-        ...scanSnapshots,
-        [String(repositoryId)]: {
-          result: scanResult,
-          completedAt: new Date().toISOString(),
-        },
-      }
-
-      setScanSnapshots(nextSnapshots)
-      writeJsonStorage(SCAN_CACHE_KEY, nextSnapshots)
-
-      setScanActionState({
-        status: 'success',
-        error: '',
-      })
-    } catch (error) {
-      setScanActionState({
+      setScanState({
         status: 'error',
+        result: null,
+        completedAt: null,
         error:
           error instanceof Error ? error.message : 'Could not run repository scan.',
       })
     }
-  }, [hasValidRepositoryId, repositoriesUrl, repositoryId, scanSnapshots, selectedScanType])
+  }, [hasValidRepositoryId, repositoriesUrl, repositoryId])
 
   useEffect(() => {
     void loadSession()
@@ -408,6 +440,9 @@ function RepositoryDetailPage() {
   useEffect(() => {
     if (authState.status !== 'authenticated') {
       setRepositoryState(initialRepositoryState)
+      setScanState(initialScanState)
+      autoScanRepositoryRef.current = null
+      latestScanRequestRef.current += 1
       return
     }
 
@@ -415,8 +450,28 @@ function RepositoryDetailPage() {
   }, [authState.status, resolveRepository])
 
   useEffect(() => {
-    writeJsonStorage(PREFERRED_SCAN_KEY, selectedScanType)
-  }, [selectedScanType])
+    autoScanRepositoryRef.current = null
+    latestScanRequestRef.current += 1
+    setScanState(initialScanState)
+  }, [repositoryId])
+
+  useEffect(() => {
+    if (authState.status !== 'authenticated') {
+      return
+    }
+
+    if (repositoryState.status !== 'success') {
+      return
+    }
+
+    const routeRepositoryKey = String(repositoryId)
+    if (autoScanRepositoryRef.current === routeRepositoryKey) {
+      return
+    }
+
+    autoScanRepositoryRef.current = routeRepositoryKey
+    void runGreenScan()
+  }, [authState.status, repositoryState.status, repositoryId, runGreenScan])
 
   const isLoadingSession = authState.status === 'loading'
   const isMissingConfig = authState.status === 'missing_config'
@@ -424,9 +479,8 @@ function RepositoryDetailPage() {
   const isUnauthenticated = authState.status === 'unauthenticated'
   const isAuthenticated = authState.status === 'authenticated' && authState.user
 
-  const activeSnapshot = scanSnapshots[String(repositoryId)] || null
-  const activeResult = activeSnapshot?.result || null
-  const hasScanResult = Boolean(activeResult)
+  const activeResult = scanState.result
+  const hasScanResult = scanState.status === 'success' && Boolean(activeResult)
 
   const activeChecks = Array.isArray(activeResult?.checks) ? activeResult.checks : []
   const activeRecommendations = Array.isArray(activeResult?.recommendations)
@@ -459,6 +513,12 @@ function RepositoryDetailPage() {
   return (
     <div className="page repository-detail-page">
       <Card className="detail-repository-card">
+        <div className="detail-repository-header">
+          <Button to="/repositories" variant="secondary">
+            Back to repositories
+          </Button>
+        </div>
+
         {!isAuthenticated ? (
           <>
             <h1>Repository analysis</h1>
@@ -511,127 +571,76 @@ function RepositoryDetailPage() {
           </p>
         ) : null}
 
-        {isAuthenticated && repositoryState.status === 'success' ? (
+        {isAuthenticated &&
+        repositoryState.status === 'success' &&
+        (scanState.status === 'idle' || scanState.status === 'loading') ? (
           <>
-            {!hasScanResult ? (
-              <>
-                <p className="eyebrow">Selected project</p>
-                <h1>{repositoryState.repository.fullName}</h1>
-                <p className="page-description">
-                  {repositoryState.repository.description ||
-                    'No repository description provided.'}
-                </p>
+            <h1>Scanning repository</h1>
+            <p className="state-note">
+              RepoGuard is checking repository health signals.
+            </p>
+            <div className="hero-actions">
+              <Button to="/repositories" variant="secondary">
+                Choose another project
+              </Button>
+            </div>
+          </>
+        ) : null}
 
-                <p className="detail-repository-meta">
-                  {repositoryState.repository.language || 'Language not specified'} |{' '}
-                  {repositoryState.repository.private ? 'private' : 'public'} | Last push:{' '}
-                  {formatDate(repositoryState.repository.pushedAt)} |{' '}
-                  <a
-                    className="profile-link"
-                    href={repositoryState.repository.htmlUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Open on GitHub
-                  </a>
-                </p>
+        {isAuthenticated &&
+        repositoryState.status === 'success' &&
+        scanState.status === 'error' ? (
+          <>
+            <h1>Scanning repository</h1>
+            <p className="state-note state-note-danger">{scanState.error}</p>
+            <div className="hero-actions">
+              <Button type="button" onClick={() => void runGreenScan()}>
+                Retry Green Scan
+              </Button>
+              <Button to="/repositories" variant="secondary">
+                Choose another project
+              </Button>
+            </div>
+          </>
+        ) : null}
 
-                <div className="scan-controls-row">
-                  <label className="scan-select-label" htmlFor="scan-mode-pre">
-                    Scan mode
-                  </label>
-                  <select
-                    id="scan-mode-pre"
-                    className="scan-select"
-                    value={selectedScanType}
-                    onChange={(event) => setSelectedScanType(event.target.value)}
-                    disabled={scanActionState.status === 'loading'}
-                  >
-                    {scanModes.map((mode) => (
-                      <option key={mode.key} value={mode.key}>
-                        {mode.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+        {isAuthenticated && repositoryState.status === 'success' && hasScanResult ? (
+          <>
+            <p className="eyebrow">Project report</p>
+            <h1>{repositoryState.repository.fullName}</h1>
+            <p className="report-summary-line">
+              Score: {activeResult.score ?? '--'} | Status:{' '}
+              <span className={getSeverityBadgeClass(highestSeverity)}>
+                {highestSeverity}
+              </span>{' '}
+              | {getScanTypeLabel(activeResult.scanType)}
+            </p>
 
-                <div className="hero-actions">
-                  <Button
-                    type="button"
-                    onClick={() => void runScan()}
-                    disabled={scanActionState.status === 'loading'}
-                  >
-                    {scanActionState.status === 'loading'
-                      ? 'Running scan...'
-                      : 'Scan project'}
-                  </Button>
-                  <Button to="/repositories" variant="secondary">
-                    Choose another project
-                  </Button>
-                </div>
-              </>
-            ) : (
-              <>
-                <p className="eyebrow">Project report</p>
-                <h1>{repositoryState.repository.fullName}</h1>
-                <p className="report-summary-line">
-                  Score: {activeResult.score ?? '--'} | Status:{' '}
-                  <span className={getSeverityBadgeClass(highestSeverity)}>
-                    {highestSeverity}
-                  </span>{' '}
-                  | {getScanTypeLabel(activeResult.scanType)}
-                </p>
+            <p className="detail-repository-meta">
+              {repositoryState.repository.description ||
+                'No repository description provided.'}
+            </p>
 
-                <p className="detail-repository-meta">
-                  {repositoryState.repository.description ||
-                    'No repository description provided.'}
-                </p>
+            <p className="detail-repository-meta">
+              {repositoryState.repository.language || 'Language not specified'} |{' '}
+              {repositoryState.repository.private ? 'private' : 'public'} | Last push:{' '}
+              {formatDate(repositoryState.repository.pushedAt)} | Last scan:{' '}
+              {scanState.completedAt ? formatDate(scanState.completedAt) : 'Unknown'} |{' '}
+              <a
+                className="profile-link"
+                href={repositoryState.repository.htmlUrl}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open on GitHub
+              </a>
+            </p>
 
-                <p className="detail-repository-meta">
-                  Last push: {formatDate(repositoryState.repository.pushedAt)} | Last scan:{' '}
-                  {activeSnapshot?.completedAt
-                    ? formatDate(activeSnapshot.completedAt)
-                    : 'Unknown'}
-                </p>
-
-                <div className="scan-controls-row">
-                  <label className="scan-select-label" htmlFor="scan-mode-post">
-                    Scan mode
-                  </label>
-                  <select
-                    id="scan-mode-post"
-                    className="scan-select"
-                    value={selectedScanType}
-                    onChange={(event) => setSelectedScanType(event.target.value)}
-                    disabled={scanActionState.status === 'loading'}
-                  >
-                    {scanModes.map((mode) => (
-                      <option key={mode.key} value={mode.key}>
-                        {mode.label}
-                      </option>
-                    ))}
-                  </select>
-
-                  <Button
-                    type="button"
-                    onClick={() => void runScan()}
-                    disabled={scanActionState.status === 'loading'}
-                  >
-                    {scanActionState.status === 'loading'
-                      ? 'Running scan...'
-                      : `Run ${getScanTypeLabel(selectedScanType)}`}
-                  </Button>
-
-                  <Button to="/repositories" variant="secondary">
-                    Choose another project
-                  </Button>
-                </div>
-              </>
-            )}
-
-            {scanActionState.status === 'error' ? (
-              <p className="state-note state-note-danger">{scanActionState.error}</p>
-            ) : null}
+            <div className="hero-actions">
+              <Button to="/repositories" variant="secondary">
+                Choose another project
+              </Button>
+            </div>
           </>
         ) : null}
       </Card>

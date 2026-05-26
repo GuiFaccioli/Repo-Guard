@@ -815,10 +815,28 @@ a {
   line-height: 1.45;
 }
 
+.scan-result-file {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.scan-result-file-path {
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+}
+
 .scan-results-intro h2 {
   font-family: var(--github-font);
   font-size: 1.12rem;
   letter-spacing: -0.01em;
+}
+
+.scan-results-eyebrow {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .site-footer {

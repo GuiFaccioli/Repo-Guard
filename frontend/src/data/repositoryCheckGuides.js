@@ -156,71 +156,93 @@ export const REPOSITORY_CHECK_GUIDES = [
 
 const ADDITIONAL_REPOSITORY_CHECK_GUIDES = [
   {
-    id: 'secret-files',
-    label: 'Secret files',
-    shortDescription: 'Repository file names that may expose sensitive data.',
-    fixTitle: 'Remove committed secret-like files',
+    id: 'hardcoded-secret',
+    label: 'Possible hardcoded secret',
+    shortDescription: 'Secret-like values assigned directly in source code.',
+    fixTitle: 'Move secrets out of source code',
     whatItIs:
-      'Secret files are repository files that may contain credentials or private keys, such as .env files and private key material.',
+      'A hardcoded secret is a credential or token value written directly into application code.',
     whyChecked:
-      'RepoGuard checks for obvious secret-like file names because they are a common source of credential exposure.',
+      'RepoGuard checks obvious secret assignment patterns because committed credentials are a frequent accidental exposure source.',
     whyMatters:
-      'Committing sensitive files can expose credentials, enable unauthorized access, and expand incident response scope.',
+      'Secrets in source control can be copied, leaked, and reused long after a commit is made.',
     howToFix: [
-      'Remove sensitive files from version control history and rotate exposed credentials.',
-      'Keep runtime secrets in environment variables or a dedicated secret manager.',
-      'Update .gitignore to prevent secret files from being committed again.',
+      'Replace hardcoded values with environment variables or a secrets manager.',
+      'Rotate any credential that may already be exposed.',
+      'Document safe local setup so contributors avoid placing secrets in code.',
+      'Safe example: const apiKey = process.env.API_KEY;',
     ],
   },
   {
-    id: 'hardcoded-secrets',
-    label: 'Hardcoded secrets',
-    shortDescription: 'Credential-like strings embedded in source files.',
-    fixTitle: 'Replace hardcoded secret patterns',
+    id: 'committed-env-file',
+    label: 'Environment file committed',
+    shortDescription: 'Environment files tracked in the repository tree.',
+    fixTitle: 'Keep .env files out of version control',
     whatItIs:
-      'Hardcoded secrets are API keys, tokens, passwords, or private credentials written directly in source code or config files.',
+      'Environment files such as .env can contain API keys, tokens, and private runtime configuration.',
     whyChecked:
-      'RepoGuard checks for obvious secret-like patterns in sampled files to identify accidental credential leakage.',
+      'RepoGuard checks for committed .env files because they often include sensitive project secrets.',
     whyMatters:
-      'Hardcoded credentials are difficult to rotate, easy to leak, and can be abused if the repository is exposed.',
+      'A committed environment file can expose credentials and increase incident response scope.',
     howToFix: [
-      'Move credentials to environment variables or a secret manager.',
-      'Rotate any leaked keys and revoke unused credentials.',
-      'Add secret scanning checks in CI to catch future leaks earlier.',
+      'Remove environment files from version control and rotate exposed values.',
+      'Store runtime configuration in deployment environment variables or a secret manager.',
+      'Add .env patterns to .gitignore and keep a safe .env.example template.',
+      'Safe example: keep only .env.example with placeholder names, not real secrets.',
+    ],
+  },
+  {
+    id: 'sql-string-concatenation',
+    label: 'SQL query built with string concatenation',
+    shortDescription: 'SQL query text composed with dynamic string content.',
+    fixTitle: 'Use parameterized SQL queries',
+    whatItIs:
+      'String-concatenated SQL builds query text with dynamic values instead of parameter binding.',
+    whyChecked:
+      'RepoGuard checks this pattern because dynamic query strings are hard to review and can be unsafe with user-controlled input.',
+    whyMatters:
+      'Parameterized queries are safer and reduce injection risk while keeping data access code easier to maintain.',
+    howToFix: [
+      'Use prepared statements or query parameter binding in your database library.',
+      'Avoid building SQL command strings with + or template interpolation.',
+      'Keep SQL construction centralized so it is easier to audit.',
+      'Safe example: db.query("SELECT * FROM users WHERE id = ?", [userId]);',
     ],
   },
   {
     id: 'eval-usage',
-    label: 'eval usage',
-    shortDescription: 'Dynamic code execution patterns in JavaScript/TypeScript.',
-    fixTitle: 'Avoid dynamic eval execution',
+    label: 'No eval usage detected',
+    shortDescription: 'Dynamic code execution calls such as eval() and new Function().',
+    fixTitle: 'Avoid dynamic code execution patterns',
     whatItIs:
-      'eval() executes code from strings at runtime, which can make behavior unpredictable and increase injection risk.',
+      'eval() and new Function() execute code from strings at runtime.',
     whyChecked:
-      'RepoGuard checks for eval usage because it is a common unsafe pattern in frontend and backend JavaScript.',
+      'RepoGuard checks for dynamic execution because it can make behavior unpredictable and harder to secure.',
     whyMatters:
-      'Dynamic execution can turn untrusted input into executable code and complicate security review.',
+      'Dynamic execution can turn unsafe input into executable logic and complicate code review.',
     howToFix: [
-      'Replace eval with explicit parsing or safer control-flow logic.',
-      'Use structured configuration formats instead of executable strings.',
-      'Validate and sanitize any untrusted input used in dynamic behavior.',
+      'Replace eval-style usage with explicit functions, parsers, or lookup maps.',
+      'Use structured configuration instead of executable string snippets.',
+      'Validate untrusted input before it influences control flow.',
+      'Safe example: const handler = handlers[action] ?? defaultHandler;',
     ],
   },
   {
-    id: 'sql-concatenation',
-    label: 'SQL string concatenation',
-    shortDescription: 'Queries built by string concatenation.',
-    fixTitle: 'Use parameterized SQL queries',
+    id: 'permissive-cors',
+    label: 'Permissive CORS configuration',
+    shortDescription: 'CORS settings that may allow broad cross-origin access.',
+    fixTitle: 'Restrict CORS to trusted origins',
     whatItIs:
-      'SQL concatenation builds query strings by combining raw values directly into query text.',
+      'CORS controls which origins can call your API from browser contexts.',
     whyChecked:
-      'RepoGuard checks for SQL concatenation patterns because they can introduce injection risk and brittle query logic.',
+      'RepoGuard checks permissive CORS patterns because wildcard or broad defaults may expose endpoints more widely than intended.',
     whyMatters:
-      'Parameterized queries are safer and easier to maintain, especially when handling user-controlled values.',
+      'Restricting origins reduces accidental cross-origin exposure and keeps browser access boundaries clearer.',
     howToFix: [
-      'Use query parameter binding or ORM query builders for dynamic values.',
-      'Avoid building SQL statements with string concatenation.',
-      'Review existing database access paths for unsafe query construction.',
+      'Set explicit allowed origins for each environment instead of wildcard access.',
+      'Review credential and cookie settings when enabling cross-origin requests.',
+      'Keep CORS configuration centralized and documented for regular review.',
+      'Safe example: app.use(cors({ origin: ["https://app.example.com"] }));',
     ],
   },
 ]
@@ -245,14 +267,27 @@ const checkAliasMap = {
   openpullrequests: 'open-pull-requests',
   pullrequestsopen: 'open-pull-requests',
   pullrequests: 'open-pull-requests',
-  noobvioussecretfilesdetected: 'secret-files',
-  committedenvfiles: 'secret-files',
-  noobvioushardcodedsecretpatternsdetected: 'hardcoded-secrets',
-  hardcodedsecretpatterns: 'hardcoded-secrets',
+  possiblehardcodedsecret: 'hardcoded-secret',
+  hardcodedsecret: 'hardcoded-secret',
+  hardcodedsecrets: 'hardcoded-secret',
+  noobvioushardcodedsecretpatternsdetected: 'hardcoded-secret',
+  environmentfilecommitted: 'committed-env-file',
+  committedenvfile: 'committed-env-file',
+  noobvioussecretfilesdetected: 'committed-env-file',
+  committedenvfiles: 'committed-env-file',
+  sqlquerybuiltwithstringconcatenation: 'sql-string-concatenation',
+  sqlstringconcatenation: 'sql-string-concatenation',
+  noobvioussqlstringconcatenationdetected: 'sql-string-concatenation',
+  sqlstringconcatenationpatterns: 'sql-string-concatenation',
+  noevalusagedetected: 'eval-usage',
+  evalusagedetected: 'eval-usage',
   noobviousevalusagedetected: 'eval-usage',
   evalusageinjsts: 'eval-usage',
-  noobvioussqlstringconcatenationdetected: 'sql-concatenation',
-  sqlstringconcatenationpatterns: 'sql-concatenation',
+  permissivecorsconfiguration: 'permissive-cors',
+  corsconfigurationmayneedreview: 'permissive-cors',
+  secretfiles: 'committed-env-file',
+  hardcodedsecretslegacy: 'hardcoded-secret',
+  sqlconcatenation: 'sql-string-concatenation',
 }
 
 function normalizeRawCheckToken(value) {

@@ -14,8 +14,8 @@ const CHECKLIST_OPTIONS = [
   },
   {
     id: 'security_basics',
-    label: 'Security basics',
-    description: 'Simple guardrails for secrets, risky patterns, and unsafe code.',
+    label: 'Code safety signals',
+    description: 'Defensive checks for secret handling and risky code patterns.',
   },
 ]
 
@@ -47,6 +47,17 @@ function buildGuideRepositoryFullName(repository) {
   return 'Selected repository'
 }
 
+function buildScannedRepositoryName(repository) {
+  const owner = typeof repository?.owner === 'string' ? repository.owner.trim() : ''
+  const name = typeof repository?.name === 'string' ? repository.name.trim() : ''
+
+  if (owner && name) {
+    return `${owner} / ${name}`
+  }
+
+  return 'Selected repository'
+}
+
 function LandingPage() {
   const rawApiBaseUrl = import.meta.env.VITE_API_URL
   const apiBaseUrl = useMemo(
@@ -56,7 +67,10 @@ function LandingPage() {
   const scansUrl = useMemo(() => buildBackendUrl(apiBaseUrl, '/scans'), [apiBaseUrl])
 
   const [repositoryUrl, setRepositoryUrl] = useState('')
-  const [selectedChecklists, setSelectedChecklists] = useState(['good_practices'])
+  const [selectedChecklists, setSelectedChecklists] = useState([
+    'good_practices',
+    'security_basics',
+  ])
   const [scanState, setScanState] = useState(initialScanState)
   const [urlTouched, setUrlTouched] = useState(false)
   const [checklistTouched, setChecklistTouched] = useState(false)
@@ -74,6 +88,10 @@ function LandingPage() {
   )
   const repositoryFullName = useMemo(
     () => buildGuideRepositoryFullName(scannedRepository),
+    [scannedRepository],
+  )
+  const scannedRepositoryName = useMemo(
+    () => buildScannedRepositoryName(scannedRepository),
     [scannedRepository],
   )
 
@@ -292,9 +310,10 @@ function LandingPage() {
       {scanState.status === 'success' && scanState.result ? (
         <section className="scan-results" aria-label="Scan results">
           <Card className="scan-results-intro">
-            <h2>Scan results</h2>
+            <p className="scan-results-eyebrow">Project report</p>
+            <h2>{scannedRepositoryName}</h2>
             <p className="page-description">
-              RepoGuard renders only the categories you selected for this scan.
+              RepoGuard checked repository health and code safety signals.
             </p>
           </Card>
 
@@ -309,7 +328,7 @@ function LandingPage() {
                           })
                           const fallbackCheckId =
                             group.checklist === 'security_basics'
-                              ? 'secret-files'
+                              ? 'hardcoded-secret'
                               : 'readme'
                           const checkId = mappedCheckId || fallbackCheckId
                           const learnMoreLabel =
@@ -329,6 +348,12 @@ function LandingPage() {
                                   </span>
                                   <span className="scan-result-label">{item.label}</span>
                                 </p>
+                                {typeof item.filePath === 'string' && item.filePath.trim() ? (
+                                  <p className="scan-result-file">
+                                    File:{' '}
+                                    <span className="scan-result-file-path">{item.filePath}</span>
+                                  </p>
+                                ) : null}
                                 <p className="scan-result-details">{item.details}</p>
                                 <Link
                                   className="scan-result-learn-more"

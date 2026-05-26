@@ -14,6 +14,7 @@ export interface ScanChecklistItem {
   label: string;
   status: ScanItemStatus;
   details: string;
+  filePath?: string;
 }
 
 export interface ScanChecklistResult {
@@ -27,4 +28,3 @@ export interface ScanRepositoryResponse {
   selectedChecklists: ScanChecklistId[];
   results: ScanChecklistResult[];
 }
-

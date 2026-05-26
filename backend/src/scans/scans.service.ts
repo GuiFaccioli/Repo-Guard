@@ -32,6 +32,10 @@ interface FetchResponsePayload {
   [key: string]: unknown;
 }
 
+interface PatternMatch {
+  path: string;
+}
+
 const SUPPORTED_CHECKLISTS: ScanChecklistId[] = [
   'good_practices',
   'security_basics',
@@ -68,13 +72,55 @@ const SECRET_VALUE_PATTERNS = [
   /AKIA[0-9A-Z]{16}/i,
   /AIza[0-9A-Za-z_-]{20,}/i,
   /-----BEGIN [A-Z ]+PRIVATE KEY-----/i,
-  /\b(?:api[_-]?key|client[_-]?secret|secret|token|password)\b\s*[:=]/i,
 ];
+
+const HARD_CODED_SECRET_LINE_PATTERN =
+  /\b(?:const|let|var)?\s*[A-Za-z0-9_$]*(?:api[_-]?key|token|secret|password|jwt[_-]?secret|client[_-]?secret)[A-Za-z0-9_$]*\s*[:=]\s*(['"`])([^'"`\n]{6,})\1/i;
+const PLACEHOLDER_SECRET_VALUE_PATTERN =
+  /(your[_-]?|example|sample|placeholder|changeme|replace(?:[_-]?me)?|dummy|test|fake|null|undefined|xxxxx?)/i;
+const SQL_TEMPLATE_PATTERN =
+  /`[^`\n]{0,300}\b(?:SELECT|INSERT|UPDATE|DELETE)\b[^`\n]{0,300}\$\{[^}]+\}[^`\n]{0,300}`/i;
+const SQL_CONCAT_PATTERN =
+  /['"`]\s*(?:SELECT|INSERT|UPDATE|DELETE)\b[\s\S]{0,180}['"`]\s*\+\s*[\w$({`]/i;
+const EVAL_USAGE_PATTERN = /\beval\s*\(|\bnew\s+Function\s*\(/i;
+const CORS_WILDCARD_PATTERN =
+  /cors\s*\(\s*\{[\s\S]{0,220}?origin\s*:\s*['"`]\*['"`][\s\S]{0,220}?\}\s*\)/i;
+const CORS_HEADER_WILDCARD_PATTERN =
+  /access-control-allow-origin[\s'"`:=,]*\*/i;
+const CORS_DEFAULT_USAGE_PATTERN =
+  /app\.use\s*\(\s*cors\s*\(\s*\)\s*\)|\bcors\s*\(\s*\)\s*;?/i;
+
+const ENV_FILE_NAMES = new Set([
+  '.env',
+  '.env.local',
+  '.env.production',
+  '.env.development',
+]);
+const CODE_SAFETY_FILE_EXTENSIONS = new Set([
+  '.js',
+  '.jsx',
+  '.ts',
+  '.tsx',
+  '.mjs',
+  '.cjs',
+  '.json',
+  '.yml',
+  '.yaml',
+  '.py',
+  '.go',
+  '.java',
+  '.rb',
+  '.php',
+  '.sh',
+  '.toml',
+  '.ini',
+  '.cfg',
+]);
 
 const ISSUE_THRESHOLD = 25;
 const PULL_REQUEST_THRESHOLD = 10;
 const RECENT_ACTIVITY_DAYS = 90;
-const MAX_SECURITY_SAMPLES = 24;
+const MAX_SECURITY_SAMPLES = 64;
 
 @Injectable()
 export class ScansService {
@@ -559,7 +605,7 @@ export class ScansService {
 
     return {
       checklist: 'good_practices',
-      title: 'Good practices',
+      title: 'Repository health',
       items: checks,
     };
   }
@@ -572,60 +618,111 @@ export class ScansService {
     const paths = new Set(
       treePathsInput.map((path) => this.normalizePath(path)),
     );
-    const textCorpus = textSamples
-      .map((sample) => `${sample.path}\n${sample.content}`)
-      .join('\n\n');
+    const codeSamples = textSamples.filter((sample) =>
+      this.isCodeSafetySamplePath(sample.path),
+    );
     const items: ScanChecklistItem[] = [];
-
-    const secretFilePattern = Array.from(paths).some((path) =>
-      /(^|\/)\.env(\.|$)|(^|\/)(?:credentials?|secrets?|id_rsa|id_dsa|private[_-]?key)(\.[^/]+)?$/i.test(
-        path,
-      ),
+    const hardcodedSecretMatch = this.findHardcodedSecretMatch(codeSamples);
+    items.push(
+      hardcodedSecretMatch
+        ? {
+            label: 'Possible hardcoded secret',
+            status: 'fail',
+            filePath: hardcodedSecretMatch.path,
+            details: 'A secret-like value appears to be written directly in code.',
+          }
+        : {
+            label: 'Possible hardcoded secret',
+            status: 'pass',
+            details: 'RepoGuard did not find obvious hardcoded secret assignments in sampled files.',
+          },
     );
 
-    items.push({
-      label: 'No obvious secret files detected',
-      status: secretFilePattern ? 'fail' : 'pass',
-      details: secretFilePattern
-        ? 'A file name that looks sensitive was found in the repository tree.'
-        : 'No obvious secret file names were found in the sampled repository tree.',
-    });
-
-    const hardcodedSecretPattern = SECRET_VALUE_PATTERNS.some((pattern) =>
-      pattern.test(textCorpus),
+    const envFileMatch = this.findCommittedEnvFile(paths);
+    items.push(
+      envFileMatch
+        ? {
+            label: 'Environment file committed',
+            status: 'fail',
+            filePath: envFileMatch,
+            details: 'Environment files can expose private configuration.',
+          }
+        : {
+            label: 'Environment file committed',
+            status: 'pass',
+            details: 'No committed environment files were found in sampled repository paths.',
+          },
     );
 
-    items.push({
-      label: 'No obvious hardcoded secret patterns detected',
-      status: hardcodedSecretPattern ? 'fail' : 'pass',
-      details: hardcodedSecretPattern
-        ? 'The sampled files include a pattern that looks like a secret or credential.'
-        : 'No obvious secret-like patterns were found in the sampled files.',
-    });
-
-    const evalPattern = /\beval\s*\(/i.test(textCorpus);
-    items.push({
-      label: 'No obvious eval usage detected',
-      status: evalPattern ? 'fail' : 'pass',
-      details: evalPattern
-        ? 'A sampled file appears to use eval().'
-        : 'No obvious eval() usage was found in the sampled files.',
-    });
-
-    const sqlConcatPattern = /\b(?:SELECT|INSERT|UPDATE|DELETE)\b[\s\S]{0,120}\+/i.test(
-      textCorpus,
+    const sqlConcatMatch = this.findPatternMatch(codeSamples, [
+      SQL_TEMPLATE_PATTERN,
+      SQL_CONCAT_PATTERN,
+    ]);
+    items.push(
+      sqlConcatMatch
+        ? {
+            label: 'SQL query built with string concatenation',
+            status: 'fail',
+            filePath: sqlConcatMatch.path,
+            details: 'SQL query appears to be built with dynamic string content.',
+          }
+        : {
+            label: 'SQL query built with string concatenation',
+            status: 'pass',
+            details:
+              'RepoGuard did not find obvious SQL string concatenation in sampled files.',
+          },
     );
-    items.push({
-      label: 'No obvious SQL string concatenation detected',
-      status: sqlConcatPattern ? 'fail' : 'pass',
-      details: sqlConcatPattern
-        ? 'A sampled file appears to build a SQL query with string concatenation.'
-        : 'No obvious SQL string concatenation was found in the sampled files.',
-    });
+
+    const evalMatch = this.findPatternMatch(codeSamples, [EVAL_USAGE_PATTERN]);
+    items.push(
+      evalMatch
+        ? {
+            label: 'No eval usage detected',
+            status: 'fail',
+            filePath: evalMatch.path,
+            details: 'Dynamic code execution pattern detected.',
+          }
+        : {
+            label: 'No eval usage detected',
+            status: 'pass',
+            details: 'RepoGuard did not find obvious eval usage in sampled files.',
+          },
+    );
+
+    const wildcardCorsMatch = this.findPatternMatch(codeSamples, [
+      CORS_WILDCARD_PATTERN,
+      CORS_HEADER_WILDCARD_PATTERN,
+    ]);
+    const defaultCorsMatch = wildcardCorsMatch
+      ? null
+      : this.findPatternMatch(codeSamples, [CORS_DEFAULT_USAGE_PATTERN]);
+
+    if (wildcardCorsMatch) {
+      items.push({
+        label: 'Permissive CORS configuration',
+        status: 'fail',
+        filePath: wildcardCorsMatch.path,
+        details: 'API may be accepting requests from any origin.',
+      });
+    } else if (defaultCorsMatch) {
+      items.push({
+        label: 'Permissive CORS configuration',
+        status: 'fail',
+        filePath: defaultCorsMatch.path,
+        details: 'CORS configuration may need review.',
+      });
+    } else {
+      items.push({
+        label: 'Permissive CORS configuration',
+        status: 'pass',
+        details: 'RepoGuard did not find obvious permissive CORS patterns in sampled files.',
+      });
+    }
 
     return {
       checklist: 'security_basics',
-      title: 'Security basics',
+      title: 'Code safety signals',
       items,
     };
   }
@@ -641,6 +738,117 @@ export class ScansService {
       status: passed ? 'pass' : 'fail',
       details: passed ? passDetails : failDetails,
     };
+  }
+
+  private findCommittedEnvFile(paths: Set<string>): string | null {
+    const sortedPaths = Array.from(paths).sort();
+
+    for (const path of sortedPaths) {
+      const normalizedPath = this.normalizePath(path);
+      const fileName = normalizedPath.split('/').pop()?.toLowerCase() || '';
+      if (ENV_FILE_NAMES.has(fileName)) {
+        return normalizedPath;
+      }
+    }
+
+    return null;
+  }
+
+  private findHardcodedSecretMatch(
+    samples: Array<{ path: string; content: string }>,
+  ): PatternMatch | null {
+    for (const sample of samples) {
+      const lines = sample.content.split(/\r?\n/);
+
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line || this.isCommentLine(line)) {
+          continue;
+        }
+
+        if (line.includes('process.env') || line.includes('import.meta.env')) {
+          continue;
+        }
+
+        const match = line.match(HARD_CODED_SECRET_LINE_PATTERN);
+        if (!match) {
+          continue;
+        }
+
+        const assignedValue = match[2]?.trim() || '';
+        if (!assignedValue || this.isPlaceholderSecretValue(assignedValue)) {
+          continue;
+        }
+
+        const hasSecretEntropy = SECRET_VALUE_PATTERNS.some((pattern) =>
+          pattern.test(assignedValue),
+        );
+        const looksSensitiveName = /api|token|secret|pass|jwt|key/i.test(line);
+
+        if (!hasSecretEntropy && !looksSensitiveName) {
+          continue;
+        }
+
+        return { path: sample.path };
+      }
+    }
+
+    return null;
+  }
+
+  private findPatternMatch(
+    samples: Array<{ path: string; content: string }>,
+    patterns: RegExp[],
+  ): PatternMatch | null {
+    for (const sample of samples) {
+      if (patterns.some((pattern) => pattern.test(sample.content))) {
+        return { path: sample.path };
+      }
+    }
+
+    return null;
+  }
+
+  private isCodeSafetySamplePath(path: string): boolean {
+    const normalizedPath = this.normalizePath(path);
+    const extension = normalizedPath.includes('.')
+      ? `.${normalizedPath.split('.').pop()?.toLowerCase() || ''}`
+      : '';
+
+    if (!CODE_SAFETY_FILE_EXTENSIONS.has(extension)) {
+      return false;
+    }
+
+    const lowerPath = normalizedPath.toLowerCase();
+    if (
+      lowerPath.includes('/__tests__/') ||
+      lowerPath.includes('/test/') ||
+      lowerPath.includes('/tests/')
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private isCommentLine(line: string): boolean {
+    return /^(?:\/\/|\/\*|\*|#|<!--)/.test(line);
+  }
+
+  private isPlaceholderSecretValue(value: string): boolean {
+    if (PLACEHOLDER_SECRET_VALUE_PATTERN.test(value)) {
+      return true;
+    }
+
+    if (/^[A-Z_]+$/.test(value) || /^\${[^}]+}$/.test(value)) {
+      return true;
+    }
+
+    return value.length < 8;
+  }
+
+  private isProbablyBinaryContent(content: string): boolean {
+    return content.includes('\u0000');
   }
 
   private hasAnyPath(paths: Set<string>, candidates: string[]): boolean {
@@ -773,7 +981,7 @@ export class ScansService {
     for (const path of candidates) {
       try {
         const content = await this.fetchFileText(target, defaultBranch, path);
-        if (content) {
+        if (content && !this.isProbablyBinaryContent(content)) {
           samples.push({ path, content });
         }
       } catch {

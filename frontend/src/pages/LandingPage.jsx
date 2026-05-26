@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router-dom'
 import Button from '../components/Button'
 import Card from '../components/Card'
+import { resolveRepositoryCheckId } from '../data/repositoryCheckGuides'
 import { buildBackendUrl, normalizeApiBaseUrl } from '../utils/apiUrl'
 import { normalizeRepositoryUrl } from '../utils/repositoryUrl'
 
@@ -23,6 +25,28 @@ const initialScanState = {
   error: '',
 }
 
+function buildGuideRouteRepositoryId(repository) {
+  const provider = typeof repository?.provider === 'string' ? repository.provider.trim() : ''
+  const owner = typeof repository?.owner === 'string' ? repository.owner.trim() : ''
+  const name = typeof repository?.name === 'string' ? repository.name.trim() : ''
+
+  const rawToken = [provider, owner, name].filter(Boolean).join('-')
+  const normalizedToken = rawToken.replace(/[^a-zA-Z0-9-]/g, '-').replace(/-+/g, '-')
+
+  return normalizedToken || 'selected-repository'
+}
+
+function buildGuideRepositoryFullName(repository) {
+  const owner = typeof repository?.owner === 'string' ? repository.owner.trim() : ''
+  const name = typeof repository?.name === 'string' ? repository.name.trim() : ''
+
+  if (owner && name) {
+    return `${owner} / ${name}`
+  }
+
+  return 'Selected repository'
+}
+
 function LandingPage() {
   const rawApiBaseUrl = import.meta.env.VITE_API_URL
   const apiBaseUrl = useMemo(
@@ -41,6 +65,16 @@ function LandingPage() {
   const repositoryTarget = useMemo(
     () => normalizeRepositoryUrl(repositoryUrl),
     [repositoryUrl],
+  )
+
+  const scannedRepository = scanState.result?.repository
+  const routeRepositoryId = useMemo(
+    () => buildGuideRouteRepositoryId(scannedRepository),
+    [scannedRepository],
+  )
+  const repositoryFullName = useMemo(
+    () => buildGuideRepositoryFullName(scannedRepository),
+    [scannedRepository],
   )
 
   const isRepositoryUrlValid = Boolean(repositoryTarget)
@@ -269,20 +303,44 @@ function LandingPage() {
                 <Card key={group.checklist} className="scan-result-card" title={group.title}>
                   <ul className="scan-result-list">
                     {Array.isArray(group.items)
-                      ? group.items.map((item) => (
-                          <li
-                            key={`${group.checklist}-${item.label}`}
-                            className={`scan-result-item scan-result-item-${item.status}`.trim()}
-                          >
-                            <span className="scan-result-icon" aria-hidden="true">
-                              {item.status === 'pass' ? '✓' : '✕'}
-                            </span>
-                            <span className="scan-result-copy">
-                              <span className="scan-result-label">{item.label}</span>
-                              <span className="scan-result-details">{item.details}</span>
-                            </span>
-                          </li>
-                        ))
+                      ? group.items.map((item) => {
+                          const mappedCheckId = resolveRepositoryCheckId({
+                            label: item.label,
+                          })
+                          const fallbackCheckId =
+                            group.checklist === 'security_basics'
+                              ? 'secret-files'
+                              : 'readme'
+                          const checkId = mappedCheckId || fallbackCheckId
+
+                          return (
+                            <li
+                              key={`${group.checklist}-${item.label}`}
+                              className={`scan-result-item scan-result-item-${item.status}`.trim()}
+                            >
+                              <span className="scan-result-icon" aria-hidden="true">
+                                {item.status === 'pass' ? '\u2713' : '\u2715'}
+                              </span>
+                              <span className="scan-result-copy">
+                                <span className="scan-result-label-row">
+                                  <span className="scan-result-label">{item.label}</span>
+                                  <Link
+                                    className="scan-result-learn-more"
+                                    to={`/repositories/${routeRepositoryId}/checks/${checkId}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    state={{
+                                      repositoryFullName,
+                                    }}
+                                  >
+                                    Learn more {'\u2197'}
+                                  </Link>
+                                </span>
+                                <span className="scan-result-details">{item.details}</span>
+                              </span>
+                            </li>
+                          )
+                        })
                       : null}
                   </ul>
                 </Card>

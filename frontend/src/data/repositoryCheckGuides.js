@@ -154,20 +154,105 @@ export const REPOSITORY_CHECK_GUIDES = [
   },
 ]
 
+const ADDITIONAL_REPOSITORY_CHECK_GUIDES = [
+  {
+    id: 'secret-files',
+    label: 'Secret files',
+    shortDescription: 'Repository file names that may expose sensitive data.',
+    fixTitle: 'Remove committed secret-like files',
+    whatItIs:
+      'Secret files are repository files that may contain credentials or private keys, such as .env files and private key material.',
+    whyChecked:
+      'RepoGuard checks for obvious secret-like file names because they are a common source of credential exposure.',
+    whyMatters:
+      'Committing sensitive files can expose credentials, enable unauthorized access, and expand incident response scope.',
+    howToFix: [
+      'Remove sensitive files from version control history and rotate exposed credentials.',
+      'Keep runtime secrets in environment variables or a dedicated secret manager.',
+      'Update .gitignore to prevent secret files from being committed again.',
+    ],
+  },
+  {
+    id: 'hardcoded-secrets',
+    label: 'Hardcoded secrets',
+    shortDescription: 'Credential-like strings embedded in source files.',
+    fixTitle: 'Replace hardcoded secret patterns',
+    whatItIs:
+      'Hardcoded secrets are API keys, tokens, passwords, or private credentials written directly in source code or config files.',
+    whyChecked:
+      'RepoGuard checks for obvious secret-like patterns in sampled files to identify accidental credential leakage.',
+    whyMatters:
+      'Hardcoded credentials are difficult to rotate, easy to leak, and can be abused if the repository is exposed.',
+    howToFix: [
+      'Move credentials to environment variables or a secret manager.',
+      'Rotate any leaked keys and revoke unused credentials.',
+      'Add secret scanning checks in CI to catch future leaks earlier.',
+    ],
+  },
+  {
+    id: 'eval-usage',
+    label: 'eval usage',
+    shortDescription: 'Dynamic code execution patterns in JavaScript/TypeScript.',
+    fixTitle: 'Avoid dynamic eval execution',
+    whatItIs:
+      'eval() executes code from strings at runtime, which can make behavior unpredictable and increase injection risk.',
+    whyChecked:
+      'RepoGuard checks for eval usage because it is a common unsafe pattern in frontend and backend JavaScript.',
+    whyMatters:
+      'Dynamic execution can turn untrusted input into executable code and complicate security review.',
+    howToFix: [
+      'Replace eval with explicit parsing or safer control-flow logic.',
+      'Use structured configuration formats instead of executable strings.',
+      'Validate and sanitize any untrusted input used in dynamic behavior.',
+    ],
+  },
+  {
+    id: 'sql-concatenation',
+    label: 'SQL string concatenation',
+    shortDescription: 'Queries built by string concatenation.',
+    fixTitle: 'Use parameterized SQL queries',
+    whatItIs:
+      'SQL concatenation builds query strings by combining raw values directly into query text.',
+    whyChecked:
+      'RepoGuard checks for SQL concatenation patterns because they can introduce injection risk and brittle query logic.',
+    whyMatters:
+      'Parameterized queries are safer and easier to maintain, especially when handling user-controlled values.',
+    howToFix: [
+      'Use query parameter binding or ORM query builders for dynamic values.',
+      'Avoid building SQL statements with string concatenation.',
+      'Review existing database access paths for unsafe query construction.',
+    ],
+  },
+]
+
 const checkAliasMap = {
   readme: 'readme',
+  readmeexists: 'readme',
   gitignore: 'gitignore',
+  gitignoreexists: 'gitignore',
   packagejson: 'package-json',
+  packagemetadataispresent: 'package-json',
   dependabot: 'dependabot',
+  dependencyautomationisconfigured: 'dependabot',
   githubactions: 'github-actions',
   actionsworkflow: 'github-actions',
+  ciautomationisconfigured: 'github-actions',
   license: 'license',
+  licensefileexists: 'license',
   recentactivity: 'recent-activity',
   openissues: 'open-issues',
   issuesopen: 'open-issues',
   openpullrequests: 'open-pull-requests',
   pullrequestsopen: 'open-pull-requests',
   pullrequests: 'open-pull-requests',
+  noobvioussecretfilesdetected: 'secret-files',
+  committedenvfiles: 'secret-files',
+  noobvioushardcodedsecretpatternsdetected: 'hardcoded-secrets',
+  hardcodedsecretpatterns: 'hardcoded-secrets',
+  noobviousevalusagedetected: 'eval-usage',
+  evalusageinjsts: 'eval-usage',
+  noobvioussqlstringconcatenationdetected: 'sql-concatenation',
+  sqlstringconcatenationpatterns: 'sql-concatenation',
 }
 
 function normalizeRawCheckToken(value) {
@@ -191,7 +276,11 @@ export function resolveRepositoryCheckId(check) {
 }
 
 export function getRepositoryCheckGuideById(checkId) {
-  return REPOSITORY_CHECK_GUIDES.find((item) => item.id === checkId) || null
+  return (
+    REPOSITORY_CHECK_GUIDES.find((item) => item.id === checkId) ||
+    ADDITIONAL_REPOSITORY_CHECK_GUIDES.find((item) => item.id === checkId) ||
+    null
+  )
 }
 
 export function buildOrderedRepositoryChecks(scanChecks) {

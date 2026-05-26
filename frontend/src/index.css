@@ -571,9 +571,20 @@ a {
   gap: 0.9rem;
 }
 
+.repository-guide-header-card {
+  gap: 0.55rem;
+}
+
 .repository-guide-card h2 {
   font-family: var(--github-font);
   font-size: 1.25rem;
+}
+
+.repository-guide-doc-heading {
+  color: #9ecbff;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .repository-guide-summary {
@@ -584,6 +595,13 @@ a {
 .repository-guide-section {
   display: grid;
   gap: 0.34rem;
+}
+
+.repository-guide-section-card {
+  border: 1px solid var(--line);
+  border-radius: 0.76rem;
+  background: #0d1117;
+  padding: 0.8rem 0.9rem;
 }
 
 .repository-guide-section h3 {
@@ -619,6 +637,35 @@ a {
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.repository-guide-doc-links {
+  gap: 0.45rem;
+}
+
+.repository-guide-doc-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.repository-guide-doc-link {
+  color: #79c0ff;
+  text-decoration: underline;
+  text-decoration-color: rgba(121, 192, 255, 0.45);
+  text-underline-offset: 0.18rem;
+}
+
+.repository-guide-doc-link:hover {
+  color: #a5d6ff;
+  text-decoration-color: rgba(165, 214, 255, 0.8);
+}
+
+.repository-guide-doc-link:focus-visible {
+  outline: 2px solid rgba(47, 129, 247, 0.65);
+  outline-offset: 2px;
+  border-radius: 0.2rem;
 }
 
 .scan-page {

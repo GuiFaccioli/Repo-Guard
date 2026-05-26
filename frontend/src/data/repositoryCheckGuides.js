@@ -160,12 +160,33 @@ const ADDITIONAL_REPOSITORY_CHECK_GUIDES = [
     label: 'Possible hardcoded secret',
     shortDescription: 'Secret-like values assigned directly in source code.',
     fixTitle: 'Move secrets out of source code',
+    whatRepoGuardFound:
+      'RepoGuard found a secret-like assignment pattern in sampled source code.',
     whatItIs:
       'A hardcoded secret is a credential or token value written directly into application code.',
     whyChecked:
       'RepoGuard checks obvious secret assignment patterns because committed credentials are a frequent accidental exposure source.',
+    whyNeedsAttention:
+      'Credentials in source history can be copied or reused later, even if they are removed in a newer commit.',
     whyMatters:
       'Secrets in source control can be copied, leaked, and reused long after a commit is made.',
+    saferDirection:
+      'Prefer environment variables or a dedicated secrets manager so sensitive values stay outside the repository.',
+    saferExample: 'const apiKey = process.env.API_KEY;',
+    officialDocs: [
+      {
+        label: 'GitHub: About secret scanning',
+        url: 'https://docs.github.com/en/code-security/secret-scanning/about-secret-scanning',
+      },
+      {
+        label: 'GitHub: Using secrets in GitHub Actions',
+        url: 'https://docs.github.com/en/actions/security-guides/using-secrets-in-github-actions',
+      },
+      {
+        label: 'OWASP: Secrets Management Cheat Sheet',
+        url: 'https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html',
+      },
+    ],
     howToFix: [
       'Replace hardcoded values with environment variables or a secrets manager.',
       'Rotate any credential that may already be exposed.',
@@ -178,12 +199,33 @@ const ADDITIONAL_REPOSITORY_CHECK_GUIDES = [
     label: 'Environment file committed',
     shortDescription: 'Environment files tracked in the repository tree.',
     fixTitle: 'Keep .env files out of version control',
+    whatRepoGuardFound:
+      'RepoGuard found an environment file path committed in the repository tree.',
     whatItIs:
       'Environment files such as .env can contain API keys, tokens, and private runtime configuration.',
     whyChecked:
       'RepoGuard checks for committed .env files because they often include sensitive project secrets.',
+    whyNeedsAttention:
+      'Committed environment files can expose operational settings and expand incident-response scope.',
     whyMatters:
       'A committed environment file can expose credentials and increase incident response scope.',
+    saferDirection:
+      'Keep runtime secrets in deployment configuration and commit only a safe template file such as .env.example.',
+    saferExample: '.env.example\nAPI_KEY=your_api_key_here',
+    officialDocs: [
+      {
+        label: 'GitHub: Ignoring files',
+        url: 'https://docs.github.com/en/get-started/git-basics/ignoring-files',
+      },
+      {
+        label: 'GitHub: Removing sensitive data from a repository',
+        url: 'https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/removing-sensitive-data-from-a-repository',
+      },
+      {
+        label: 'OWASP: Secrets Management Cheat Sheet',
+        url: 'https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html',
+      },
+    ],
     howToFix: [
       'Remove environment files from version control and rotate exposed values.',
       'Store runtime configuration in deployment environment variables or a secret manager.',
@@ -196,12 +238,34 @@ const ADDITIONAL_REPOSITORY_CHECK_GUIDES = [
     label: 'SQL query built with string concatenation',
     shortDescription: 'SQL query text composed with dynamic string content.',
     fixTitle: 'Use parameterized SQL queries',
+    whatRepoGuardFound:
+      'RepoGuard found a SQL statement built through dynamic string operations.',
     whatItIs:
       'String-concatenated SQL builds query text with dynamic values instead of parameter binding.',
     whyChecked:
       'RepoGuard checks this pattern because dynamic query strings are hard to review and can be unsafe with user-controlled input.',
+    whyNeedsAttention:
+      'Dynamic SQL strings are harder to validate and maintain safely when input values are mixed into command text.',
     whyMatters:
       'Parameterized queries are safer and reduce injection risk while keeping data access code easier to maintain.',
+    saferDirection:
+      'Prefer parameterized queries so values are handled separately from SQL command text.',
+    saferExample:
+      'const query = "SELECT * FROM users WHERE email = ?";\ndb.query(query, [email]);',
+    officialDocs: [
+      {
+        label: 'OWASP: SQL Injection Prevention Cheat Sheet',
+        url: 'https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html',
+      },
+      {
+        label: 'node-postgres: Parameterized queries',
+        url: 'https://node-postgres.com/features/queries',
+      },
+      {
+        label: 'Prisma: Raw query guidance',
+        url: 'https://www.prisma.io/docs/orm/prisma-client/using-raw-sql/raw-queries',
+      },
+    ],
     howToFix: [
       'Use prepared statements or query parameter binding in your database library.',
       'Avoid building SQL command strings with + or template interpolation.',
@@ -214,12 +278,29 @@ const ADDITIONAL_REPOSITORY_CHECK_GUIDES = [
     label: 'No eval usage detected',
     shortDescription: 'Dynamic code execution calls such as eval() and new Function().',
     fixTitle: 'Avoid dynamic code execution patterns',
+    whatRepoGuardFound:
+      'RepoGuard found a dynamic code execution pattern such as eval() or new Function().',
     whatItIs:
       'eval() and new Function() execute code from strings at runtime.',
     whyChecked:
       'RepoGuard checks for dynamic execution because it can make behavior unpredictable and harder to secure.',
+    whyNeedsAttention:
+      'Dynamic execution patterns can make runtime behavior harder to reason about and harder to review safely.',
     whyMatters:
       'Dynamic execution can turn unsafe input into executable logic and complicate code review.',
+    saferDirection:
+      'Prefer explicit control flow with named functions or handler maps instead of executing strings as code.',
+    saferExample: 'const handler = handlers[action] ?? defaultHandler;\nhandler(payload);',
+    officialDocs: [
+      {
+        label: 'MDN: eval()',
+        url: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/eval',
+      },
+      {
+        label: 'MDN: Function constructor',
+        url: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Function/Function',
+      },
+    ],
     howToFix: [
       'Replace eval-style usage with explicit functions, parsers, or lookup maps.',
       'Use structured configuration instead of executable string snippets.',
@@ -232,12 +313,34 @@ const ADDITIONAL_REPOSITORY_CHECK_GUIDES = [
     label: 'Permissive CORS configuration',
     shortDescription: 'CORS settings that may allow broad cross-origin access.',
     fixTitle: 'Restrict CORS to trusted origins',
+    whatRepoGuardFound:
+      'RepoGuard found a CORS configuration that may allow broad cross-origin access.',
     whatItIs:
       'CORS controls which origins can call your API from browser contexts.',
     whyChecked:
       'RepoGuard checks permissive CORS patterns because wildcard or broad defaults may expose endpoints more widely than intended.',
+    whyNeedsAttention:
+      'Wide-open origins can be acceptable for some public APIs, but they should be reviewed when credentials, cookies, or private data are involved.',
     whyMatters:
       'Restricting origins reduces accidental cross-origin exposure and keeps browser access boundaries clearer.',
+    saferDirection:
+      'Prefer explicit allowed origins per environment and review credentials settings together with CORS rules.',
+    saferExample:
+      'app.use(cors({\n  origin: ["https://app.example.com"],\n  credentials: true,\n}));',
+    officialDocs: [
+      {
+        label: 'MDN: Cross-Origin Resource Sharing',
+        url: 'https://developer.mozilla.org/en-US/docs/Web/HTTP/Guides/CORS',
+      },
+      {
+        label: 'OWASP: Testing Cross Origin Resource Sharing',
+        url: 'https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/11-Client-side_Testing/07-Testing_Cross_Origin_Resource_Sharing',
+      },
+      {
+        label: 'npm: cors middleware',
+        url: 'https://www.npmjs.com/package/cors',
+      },
+    ],
     howToFix: [
       'Set explicit allowed origins for each environment instead of wildcard access.',
       'Review credential and cookie settings when enabling cross-origin requests.',

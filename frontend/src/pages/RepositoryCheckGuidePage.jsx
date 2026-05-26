@@ -48,7 +48,6 @@ function resolveSafeEvidence(routeRepositoryId, checkId, routeState) {
   const cachedCheckEvidence = checks[String(checkId)] || {}
 
   const readStatus = (value) => (value === 'pass' || value === 'fail' ? value : null)
-
   const routeStatus = readStatus(routeState?.checkStatus)
   const cachedStatus = readStatus(cachedCheckEvidence?.status)
 
@@ -113,6 +112,27 @@ function extractSafeExample(guide) {
   return safeExampleStep.replace(/^safe example:\s*/i, '').trim()
 }
 
+function normalizeOfficialDocsLinks(guide) {
+  if (!Array.isArray(guide?.officialDocs)) {
+    return []
+  }
+
+  return guide.officialDocs
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => {
+      const label = typeof item.label === 'string' ? item.label.trim() : ''
+      const url = typeof item.url === 'string' ? item.url.trim() : ''
+      const validUrl = /^https?:\/\//i.test(url) ? url : ''
+
+      if (!label || !validUrl) {
+        return null
+      }
+
+      return { label, url: validUrl }
+    })
+    .filter(Boolean)
+}
+
 function RepositoryCheckGuidePage() {
   const { id, checkId } = useParams()
   const location = useLocation()
@@ -131,14 +151,16 @@ function RepositoryCheckGuidePage() {
 
   const routeRepositoryId = typeof id === 'string' ? id : ''
   const numericRouteRepositoryId = Number(id)
-  const routeState = location.state && typeof location.state === 'object'
-    ? location.state
-    : {}
+  const routeState =
+    location.state && typeof location.state === 'object' ? location.state : {}
+
   const safeEvidence = useMemo(
     () => resolveSafeEvidence(routeRepositoryId, checkId, routeState),
     [checkId, routeRepositoryId, routeState],
   )
   const failedCodeSafetyView = codeSafetyCheck && safeEvidence.status === 'fail'
+  const docsHeading = failedCodeSafetyView ? 'What’s wrong?' : 'Learn more'
+  const officialDocs = useMemo(() => normalizeOfficialDocsLinks(guide), [guide])
   const safeExample = useMemo(() => extractSafeExample(guide), [guide])
   const saferDirectionSteps = useMemo(() => {
     if (!Array.isArray(guide?.howToFix)) {
@@ -148,6 +170,38 @@ function RepositoryCheckGuidePage() {
     return guide.howToFix
       .filter((step) => typeof step === 'string' && !/^safe example:\s*/i.test(step))
       .slice(0, 3)
+  }, [guide])
+  const saferDirectionSummary = useMemo(() => {
+    if (typeof guide?.saferDirection === 'string' && guide.saferDirection.trim()) {
+      return guide.saferDirection.trim()
+    }
+
+    return saferDirectionSteps[0] || 'Use a safer, explicit implementation pattern for this check.'
+  }, [guide, saferDirectionSteps])
+  const saferExampleSnippet = useMemo(() => {
+    if (typeof guide?.saferExample === 'string' && guide.saferExample.trim()) {
+      return guide.saferExample.trim()
+    }
+
+    return safeExample
+  }, [guide, safeExample])
+  const foundSummary = useMemo(() => {
+    if (safeEvidence.details) {
+      return safeEvidence.details
+    }
+
+    if (typeof guide?.whatRepoGuardFound === 'string' && guide.whatRepoGuardFound.trim()) {
+      return guide.whatRepoGuardFound.trim()
+    }
+
+    return guide?.shortDescription || ''
+  }, [guide, safeEvidence.details])
+  const attentionSummary = useMemo(() => {
+    if (typeof guide?.whyNeedsAttention === 'string' && guide.whyNeedsAttention.trim()) {
+      return guide.whyNeedsAttention.trim()
+    }
+
+    return guide?.whyMatters || ''
   }, [guide])
 
   const [connectedLogin, setConnectedLogin] = useState(
@@ -204,7 +258,10 @@ function RepositoryCheckGuidePage() {
   }, [authMeUrl, connectedLogin])
 
   const repositoryFullName = useMemo(() => {
-    if (typeof routeState.repositoryFullName === 'string' && routeState.repositoryFullName.trim()) {
+    if (
+      typeof routeState.repositoryFullName === 'string' &&
+      routeState.repositoryFullName.trim()
+    ) {
       return routeState.repositoryFullName
     }
 
@@ -233,7 +290,7 @@ function RepositoryCheckGuidePage() {
       <div className="page repository-check-guide-page">
         {connectedLogin ? (
           <div className="page-topbar">
-            <p className="page-topbar-brand">RepoGuard</p>
+            <p className="page-topbar-brand">RepoGuard Docs</p>
             <p className="page-topbar-user">@{connectedLogin} connected</p>
           </div>
         ) : null}
@@ -257,108 +314,95 @@ function RepositoryCheckGuidePage() {
     <div className="page repository-check-guide-page">
       {connectedLogin ? (
         <div className="page-topbar">
-          <p className="page-topbar-brand">RepoGuard</p>
+          <p className="page-topbar-brand">RepoGuard Docs</p>
           <p className="page-topbar-user">@{connectedLogin} connected</p>
         </div>
       ) : null}
 
-      <Card className="detail-repository-card">
+      <Card className="detail-repository-card repository-guide-header-card">
         <div className="detail-repository-header">
           <Button to={`/repositories/${id}`} variant="secondary">
-            {'\u2190'} Back
+            {'\u2190'} Back to report
           </Button>
         </div>
-        <p className="detail-repository-meta detail-repository-eyebrow">Project report</p>
-        <h1>{repositoryFullName}</h1>
-        <p className="detail-repository-meta">Minimal repository diagnosis</p>
+        <p className="detail-repository-meta detail-repository-eyebrow">Project report · {repositoryFullName}</p>
+        <h1>{guide.label}</h1>
+        <p className="repository-guide-doc-heading">{docsHeading}</p>
+        <p className="detail-repository-meta">{foundSummary}</p>
       </Card>
 
       <Card className="repository-guide-card">
-        <h2>{guide.label}</h2>
-        {failedCodeSafetyView ? (
-          <>
-            <p className="repository-guide-summary">What’s wrong?</p>
+        <section className="repository-guide-section repository-guide-section-card">
+          <h3>Where RepoGuard found it</h3>
+          {safeEvidence.filePath ? (
+            <p>
+              File: <span className="scan-result-file-path">{safeEvidence.filePath}</span>
+            </p>
+          ) : (
+            <p>File location is not available for this signal.</p>
+          )}
+          {safeEvidence.lineNumber ? <p>Line: {safeEvidence.lineNumber}</p> : null}
+        </section>
 
-            <section className="repository-guide-section">
-              <h3>Where RepoGuard found it</h3>
-              {safeEvidence.filePath ? (
-                <p>
-                  File:{' '}
-                  <span className="scan-result-file-path">{safeEvidence.filePath}</span>
-                </p>
-              ) : (
-                <p>File location is not available for this signal.</p>
-              )}
-              {safeEvidence.lineNumber ? <p>Line: {safeEvidence.lineNumber}</p> : null}
-            </section>
+        <section className="repository-guide-section repository-guide-section-card">
+          <h3>Current code pattern</h3>
+          {safeEvidence.codeExcerpt ? (
+            <pre className="repository-guide-code-block">
+              <code>{safeEvidence.codeExcerpt}</code>
+            </pre>
+          ) : (
+            <p>RepoGuard found this signal, but no safe code excerpt is available.</p>
+          )}
+        </section>
 
-            <section className="repository-guide-section">
-              <h3>Current code pattern</h3>
-              {safeEvidence.codeExcerpt ? (
-                <pre className="repository-guide-code-block">
-                  <code>{safeEvidence.codeExcerpt}</code>
-                </pre>
-              ) : (
-                <p>RepoGuard found this signal, but no safe code excerpt is available.</p>
-              )}
-            </section>
+        <section className="repository-guide-section repository-guide-section-card">
+          <h3>Why this needs attention</h3>
+          <p>{attentionSummary || guide.shortDescription}</p>
+          <p>{guide.whyMatters}</p>
+        </section>
 
-            <section className="repository-guide-section">
-              <h3>Why this needs attention</h3>
-              <p>{safeEvidence.details || guide.shortDescription}</p>
-              <p>{guide.whyMatters}</p>
-            </section>
+        <section className="repository-guide-section repository-guide-section-card" id="how-to-fix">
+          <h3>Safer direction</h3>
+          <p>{saferDirectionSummary}</p>
+          {saferDirectionSteps.length ? (
+            <ol className="scan-numbered-list repository-guide-steps">
+              {saferDirectionSteps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+          ) : null}
+          {saferExampleSnippet ? (
+            <pre className="repository-guide-code-block">
+              <code>{saferExampleSnippet}</code>
+            </pre>
+          ) : null}
+        </section>
 
-            <section className="repository-guide-section" id="how-to-fix">
-              <h3>Safer direction</h3>
-              {saferDirectionSteps.length ? (
-                <ol className="scan-numbered-list repository-guide-steps">
-                  {saferDirectionSteps.map((step) => (
-                    <li key={step}>{step}</li>
-                  ))}
-                </ol>
-              ) : null}
-              {safeExample ? (
-                <pre className="repository-guide-code-block">
-                  <code>{safeExample}</code>
-                </pre>
-              ) : null}
-            </section>
+        <section className="repository-guide-section repository-guide-section-card">
+          <h3>About this check</h3>
+          <p>{guide.whatItIs}</p>
+          <p>{guide.whyChecked}</p>
+        </section>
 
-            <section className="repository-guide-section">
-              <h3>About this check</h3>
-              <p>{guide.whyChecked}</p>
-            </section>
-          </>
-        ) : (
-          <>
-            <p className="repository-guide-summary">{guide.shortDescription}</p>
-
-            <section className="repository-guide-section">
-              <h3>What this is</h3>
-              <p>{guide.whatItIs}</p>
-            </section>
-
-            <section className="repository-guide-section">
-              <h3>Why RepoGuard checks it</h3>
-              <p>{guide.whyChecked}</p>
-            </section>
-
-            <section className="repository-guide-section">
-              <h3>Why it matters</h3>
-              <p>{guide.whyMatters}</p>
-            </section>
-
-            <section className="repository-guide-section" id="how-to-fix">
-              <h3>How to fix</h3>
-              <ol className="scan-numbered-list repository-guide-steps">
-                {guide.howToFix.map((step) => (
-                  <li key={step}>{step}</li>
-                ))}
-              </ol>
-            </section>
-          </>
-        )}
+        {officialDocs.length ? (
+          <section className="repository-guide-section repository-guide-section-card repository-guide-doc-links">
+            <h3>Official documentation</h3>
+            <ul className="repository-guide-doc-list">
+              {officialDocs.map((doc) => (
+                <li key={doc.url}>
+                  <a
+                    className="repository-guide-doc-link"
+                    href={doc.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {doc.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
 
         <div className="hero-actions">
           <Button to={`/repositories/${id}`} variant="secondary">

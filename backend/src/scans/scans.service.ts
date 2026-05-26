@@ -14,6 +14,7 @@ import {
   ScanProvider,
   ScanRepositoryResponse,
 } from './scans.types';
+import { AiReviewService } from './ai-review.service';
 import { buildSafeEvidencePacket } from './safe-evidence-packet';
 
 interface NormalizedScanRequest {
@@ -129,6 +130,8 @@ const MAX_EVIDENCE_LINE_LENGTH = 200;
 
 @Injectable()
 export class ScansService {
+  constructor(private readonly aiReviewService: AiReviewService) {}
+
   async runScan(
     repositoryUrlInput: unknown,
     checklistsInput: unknown,
@@ -166,12 +169,15 @@ export class ScansService {
         createdAt: new Date().toISOString(),
         results: selectedResults,
       });
+      const aiReview =
+        this.aiReviewService.generateFromEvidencePacket(evidencePacket);
 
       return {
         repository: target,
         selectedChecklists: request.checklists,
         results: selectedResults,
         evidencePacket,
+        aiReview,
       };
     } catch (error) {
       if (

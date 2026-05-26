@@ -4,6 +4,11 @@ export type ScanChecklistId = 'good_practices' | 'security_basics';
 export type ScanItemStatus = 'pass' | 'fail';
 export type SafeEvidenceScanType = 'green';
 export type SafeEvidenceCategory = 'repository-health' | 'code-safety';
+export type AiReviewPriority =
+  | 'review before production'
+  | 'recommended improvement'
+  | 'maintenance signal'
+  | 'informational';
 
 export interface ParsedRepositoryTarget {
   provider: ScanProvider;
@@ -70,9 +75,32 @@ export interface SafeEvidencePacket {
   safety: SafeEvidenceSafetyMetadata;
 }
 
+export interface AiReviewTopic {
+  id: string;
+  title: string;
+  priority: AiReviewPriority;
+  evidenceCheckIds: string[];
+  explanation: string;
+  recommendedDirection: string;
+  nextSteps: string[];
+}
+
+export interface AiReviewSafetyMetadata {
+  generatedFromEvidenceOnly: true;
+  providerUsed: false;
+  model: null;
+}
+
+export interface AiReviewReport {
+  summary: string;
+  topics: AiReviewTopic[];
+  safety: AiReviewSafetyMetadata;
+}
+
 export interface ScanRepositoryResponse {
   repository: ParsedRepositoryTarget;
   selectedChecklists: ScanChecklistId[];
   results: ScanChecklistResult[];
   evidencePacket?: SafeEvidencePacket;
+  aiReview?: AiReviewReport;
 }

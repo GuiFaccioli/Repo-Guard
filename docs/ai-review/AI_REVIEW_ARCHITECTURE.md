@@ -165,6 +165,13 @@ Phase 2 status (May 26, 2026):
 - AI Review Agent is still not implemented.
 - MCP integration is still not implemented.
 
+Phase 3 status (May 26, 2026):
+- AI Review service abstraction implemented in backend.
+- AI Review report contract defined with deterministic topic output.
+- Report generation is based only on Safe Evidence Packet findings.
+- No real AI provider call has been added.
+- No MCP integration has been added.
+
 ## 11. Open Questions
 - Should AI Review be generated on every scan or only on demand?
 - Should AI Review be cached?

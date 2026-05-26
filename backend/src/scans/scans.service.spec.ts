@@ -1,7 +1,8 @@
 import { ScansService } from './scans.service';
+import { AiReviewService } from './ai-review.service';
 
 describe('ScansService', () => {
-  const service = new ScansService() as unknown as {
+  const service = new ScansService(new AiReviewService()) as unknown as {
     parseRepositoryUrl: (repositoryUrl: string) => {
       provider: string;
       owner: string;
@@ -65,4 +66,3 @@ describe('ScansService', () => {
     ).toThrow('Unsupported checklist: yellow_scan');
   });
 });
-

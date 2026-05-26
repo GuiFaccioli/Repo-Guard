@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import Button from '../components/Button'
 import Card from '../components/Card'
 import { buildBackendUrl, normalizeApiBaseUrl } from '../utils/apiUrl'
@@ -15,7 +16,6 @@ const initialRepositoriesState = {
   error: '',
 }
 
-const SCAN_CACHE_KEY = 'repoguard.scanResults.v1'
 const REPOSITORY_CACHE_KEY = 'repoguard.repositories.v1'
 
 function readJsonStorage(key, fallbackValue) {
@@ -38,34 +38,6 @@ function writeJsonStorage(key, value) {
   }
 }
 
-function normalizeScanSnapshots(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return {}
-  }
-
-  const normalizedEntries = Object.entries(value).map(([key, item]) => {
-    if (!item || typeof item !== 'object') {
-      return [key, null]
-    }
-
-    const result = item.result
-    if (!result || typeof result !== 'object') {
-      return [key, null]
-    }
-
-    return [
-      key,
-      {
-        result,
-        completedAt:
-          typeof item.completedAt === 'string' ? item.completedAt : null,
-      },
-    ]
-  })
-
-  return Object.fromEntries(normalizedEntries.filter((entry) => entry[1]))
-}
-
 function formatDate(value) {
   if (!value) {
     return 'Unknown'
@@ -83,38 +55,9 @@ function formatDate(value) {
   })
 }
 
-function getSeverityBadgeClass(severity) {
-  if (severity === 'high') return 'severity-pill severity-high'
-  if (severity === 'medium') return 'severity-pill severity-medium'
-  if (severity === 'low') return 'severity-pill severity-low'
-  return 'severity-pill'
-}
-
-function getScanStatus(snapshot) {
-  if (!snapshot?.result) {
-    return {
-      scoreLabel: '--',
-      severityLabel: 'Not scanned',
-      severityClass: 'severity-pill',
-      topIssue: 'No diagnosis yet.',
-    }
-  }
-
-  const failedChecks = snapshot.result.checks.filter((check) => !check.passed)
-  const highestSeverity = snapshot.result.summary.highestSeverity
-  const topIssue = failedChecks.length
-    ? failedChecks[0].message
-    : 'No issues found in the latest scan.'
-
-  return {
-    scoreLabel: `${snapshot.result.score}`,
-    severityLabel: highestSeverity === 'none' ? 'none' : highestSeverity,
-    severityClass: getSeverityBadgeClass(highestSeverity),
-    topIssue,
-  }
-}
-
 function RepositoryListPage() {
+  const navigate = useNavigate()
+
   const rawApiBaseUrl = import.meta.env.VITE_API_URL
   const apiBaseUrl = useMemo(
     () => normalizeApiBaseUrl(rawApiBaseUrl),
@@ -137,12 +80,14 @@ function RepositoryListPage() {
 
   const [authState, setAuthState] = useState(initialAuthState)
   const [repositoriesState, setRepositoriesState] = useState(initialRepositoriesState)
-  const [scanSnapshots, setScanSnapshots] = useState(() =>
-    normalizeScanSnapshots(readJsonStorage(SCAN_CACHE_KEY, {})),
-  )
+  const [selectedRepositoryId, setSelectedRepositoryId] = useState('')
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false)
+  const dropdownRef = useRef(null)
 
   const resetRepositoryData = useCallback(() => {
     setRepositoriesState(initialRepositoriesState)
+    setSelectedRepositoryId('')
+    setIsDropdownOpen(false)
   }, [])
 
   const loadSession = useCallback(async () => {
@@ -263,6 +208,16 @@ function RepositoryListPage() {
       })
       writeJsonStorage(REPOSITORY_CACHE_KEY, repositories)
     } catch {
+      const cachedRepositories = readJsonStorage(REPOSITORY_CACHE_KEY, [])
+      if (Array.isArray(cachedRepositories) && cachedRepositories.length) {
+        setRepositoriesState({
+          status: 'success',
+          repositories: cachedRepositories,
+          error: '',
+        })
+        return
+      }
+
       setRepositoriesState({
         status: 'error',
         repositories: [],
@@ -285,8 +240,48 @@ function RepositoryListPage() {
   }, [authState.status, loadRepositories, resetRepositoryData])
 
   useEffect(() => {
-    setScanSnapshots(normalizeScanSnapshots(readJsonStorage(SCAN_CACHE_KEY, {})))
-  }, [])
+    if (repositoriesState.status !== 'success') {
+      return
+    }
+
+    const hasSelectedRepository = repositoriesState.repositories.some(
+      (repository) => String(repository.id) === selectedRepositoryId,
+    )
+
+    if (!hasSelectedRepository) {
+      const firstRepository = repositoriesState.repositories[0]
+      setSelectedRepositoryId(firstRepository ? String(firstRepository.id) : '')
+    }
+  }, [repositoriesState, selectedRepositoryId])
+
+  useEffect(() => {
+    if (!isDropdownOpen) {
+      return
+    }
+
+    function handleOutsideClick(event) {
+      if (
+        dropdownRef.current &&
+        !dropdownRef.current.contains(event.target)
+      ) {
+        setIsDropdownOpen(false)
+      }
+    }
+
+    function handleEscape(event) {
+      if (event.key === 'Escape') {
+        setIsDropdownOpen(false)
+      }
+    }
+
+    window.addEventListener('mousedown', handleOutsideClick)
+    window.addEventListener('keydown', handleEscape)
+
+    return () => {
+      window.removeEventListener('mousedown', handleOutsideClick)
+      window.removeEventListener('keydown', handleEscape)
+    }
+  }, [isDropdownOpen])
 
   const isAuthenticated = authState.status === 'authenticated' && authState.user
   const isLoadingSession = authState.status === 'loading'
@@ -298,32 +293,13 @@ function RepositoryListPage() {
   const repositoriesLoaded = repositoriesState.status === 'success'
   const repositoriesEmpty = repositoriesState.status === 'empty'
   const repositoriesError = repositoriesState.status === 'error'
-
   const repositories = repositoriesLoaded ? repositoriesState.repositories : []
-  const repositoryCount = repositories.length
 
-  const scannedSnapshots = repositories.flatMap((repository) => {
-    const snapshot = scanSnapshots[String(repository.id)]
-    if (!snapshot?.result) {
-      return []
-    }
-    return [{ repository, snapshot }]
-  })
+  const selectedRepository = repositories.find(
+    (repository) => String(repository.id) === selectedRepositoryId,
+  )
 
-  const averageScore = scannedSnapshots.length
-    ? Math.round(
-        scannedSnapshots.reduce((sum, item) => sum + item.snapshot.result.score, 0) /
-          scannedSnapshots.length,
-      )
-    : '--'
-
-  const needsAttentionCount = scannedSnapshots.filter(
-    (item) => item.snapshot.result.summary.failed > 0,
-  ).length
-
-  const highRiskCount = scannedSnapshots.filter(
-    (item) => item.snapshot.result.summary.highestSeverity === 'high',
-  ).length
+  const canInspectRepository = Boolean(selectedRepository)
 
   const displayName =
     isAuthenticated && authState.user.name?.trim()
@@ -336,68 +312,27 @@ function RepositoryListPage() {
     ? authState.user.htmlUrl || `https://github.com/${authState.user.login}`
     : ''
 
+  const handleInspectRepository = () => {
+    if (!selectedRepository) {
+      return
+    }
+    navigate(`/repositories/${selectedRepository.id}`)
+  }
+
+  const handleToggleDropdown = () => {
+    if (!repositoriesLoaded || !repositories.length) {
+      return
+    }
+    setIsDropdownOpen((current) => !current)
+  }
+
+  const handleSelectRepository = (repositoryId) => {
+    setSelectedRepositoryId(String(repositoryId))
+    setIsDropdownOpen(false)
+  }
+
   return (
-    <div className="page dashboard-page repositories-overview-page">
-      <section className="workspace-hero repositories-hero-compact">
-        <div className="workspace-hero-copy">
-          <p className="eyebrow">Repository selection workspace</p>
-          <h1>Choose a repository to inspect</h1>
-          <p className="page-description">
-            Select one repository to open a focused diagnosis page with checks and
-            recommendations.
-          </p>
-        </div>
-
-        <div className="workspace-hero-side">
-          {isAuthenticated ? (
-            <div className="workspace-topbar-user">
-              <img
-                className="identity-avatar-image"
-                src={authState.user.avatarUrl}
-                alt={`${authState.user.login} avatar`}
-                loading="lazy"
-              />
-              <div>
-                <p className="identity-name">{displayName}</p>
-                <p className="identity-meta">@{authState.user.login}</p>
-                <a className="profile-link" href={profileUrl} target="_blank" rel="noreferrer">
-                  View GitHub profile
-                </a>
-              </div>
-              <span className="connection-badge">Connected</span>
-            </div>
-          ) : (
-            <div className="workspace-topbar-user">
-              <div className="github-mark" aria-hidden="true">
-                GH
-              </div>
-              <div>
-                <p className="identity-name">GitHub connection required</p>
-                <p className="identity-meta">
-                  Authenticate first to load repositories and open analysis pages.
-                </p>
-              </div>
-            </div>
-          )}
-
-          <div className="workspace-toolbar" role="toolbar" aria-label="Repository page actions">
-            <Button type="button" onClick={() => void loadSession()} variant="secondary">
-              Refresh session
-            </Button>
-            <Button
-              type="button"
-              onClick={() => void loadRepositories()}
-              disabled={!isAuthenticated || isLoadingRepositories}
-            >
-              {isLoadingRepositories ? 'Refreshing...' : 'Refresh repositories'}
-            </Button>
-            <Button to="/" variant="secondary">
-              Back to connect
-            </Button>
-          </div>
-        </div>
-      </section>
-
+    <div className="page repository-selector-page">
       {isLoadingSession ? (
         <Card title="Checking GitHub session" subtitle="Contacting backend /auth/me">
           <p className="state-note">
@@ -429,110 +364,130 @@ function RepositoryListPage() {
             Your current session is not authenticated. Return to onboarding and try
             connecting with GitHub again.
           </p>
+          <div className="hero-actions">
+            <Button to="/">Back to connect</Button>
+          </div>
         </Card>
       ) : null}
 
-      <section className="metric-grid repository-overview-metrics" aria-label="Repository overview">
-        <Card className="metric-card metric-card-compact">
-          <p className="metric-label">Total repositories</p>
-          <p className="metric-value">{isAuthenticated ? repositoryCount : '--'}</p>
-          <p className="metric-helper">Public repositories available for analysis</p>
-        </Card>
-        <Card className="metric-card metric-card-compact">
-          <p className="metric-label">Average score</p>
-          <p className="metric-value">{isAuthenticated ? averageScore : '--'}</p>
-          <p className="metric-helper">
-            {scannedSnapshots.length ? 'Based on completed scans' : 'Available after first scan'}
-          </p>
-        </Card>
-        <Card className="metric-card metric-card-compact">
-          <p className="metric-label">Need attention</p>
-          <p className="metric-value">{isAuthenticated ? needsAttentionCount : '--'}</p>
-          <p className="metric-helper">Repositories with failed checks in latest diagnosis</p>
-        </Card>
-        <Card className="metric-card metric-card-compact">
-          <p className="metric-label">High-risk repositories</p>
-          <p className="metric-value">{isAuthenticated ? highRiskCount : '--'}</p>
-          <p className="metric-helper">Repositories with highest severity marked as high</p>
-        </Card>
-      </section>
-
-      <Card
-        title="Your GitHub public repositories"
-        subtitle="Select a repository to open a focused analysis page"
-      >
-        {isLoadingRepositories ? (
-          <p className="state-note">Loading repositories from GitHub...</p>
-        ) : null}
-
-        {repositoriesError ? (
-          <p className="state-note state-note-danger">{repositoriesState.error}</p>
-        ) : null}
-
-        {repositoriesEmpty ? (
-          <p className="state-note">No public repositories were returned for this account.</p>
-        ) : null}
-
-        {repositoriesLoaded ? (
-          <div className="repository-table-wrap">
-            <table className="repository-table repository-table-overview">
-              <thead>
-                <tr>
-                  <th className="col-repository">Repository</th>
-                  <th className="col-language">Language</th>
-                  <th className="col-push">Last push</th>
-                  <th className="col-score">Score</th>
-                  <th className="col-issues">Status</th>
-                  <th className="col-action">Primary action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {repositories.map((repository) => {
-                  const snapshot = scanSnapshots[String(repository.id)]
-                  const status = getScanStatus(snapshot)
-
-                  return (
-                    <tr key={repository.id}>
-                      <td className="cell-repository">
-                        <div className="repo-name-cell">
-                          <p className="repository-name">{repository.fullName}</p>
-                          <p className="repository-description">
-                            {repository.description || 'No description provided.'}
-                          </p>
-                          <a
-                            href={repository.htmlUrl}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="repository-link"
-                          >
-                            Open on GitHub
-                          </a>
-                          <p className="scan-row-hint">{status.topIssue}</p>
-                        </div>
-                      </td>
-                      <td className="cell-language">{repository.language || 'Not specified'}</td>
-                      <td className="cell-push">{formatDate(repository.pushedAt)}</td>
-                      <td className="cell-score">
-                        <span className={snapshot?.result ? status.severityClass : 'severity-pill'}>
-                          {status.scoreLabel}
-                        </span>
-                      </td>
-                      <td className="cell-issues">
-                        <span className={status.severityClass}>{status.severityLabel}</span>
-                      </td>
-                      <td className="cell-action">
-                        <Button to={`/repositories/${repository.id}`}>
-                          Inspect repository
-                        </Button>
-                      </td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+      {isAuthenticated ? (
+        <section className="repository-selector-shell">
+          <div className="selector-connected-user">
+            <div className="selector-connected-user-main">
+              <img
+                className="identity-avatar-image"
+                src={authState.user.avatarUrl}
+                alt={`${authState.user.login} avatar`}
+                loading="lazy"
+              />
+              <div>
+                <p className="identity-name">{displayName}</p>
+                <p className="identity-meta">@{authState.user.login}</p>
+              </div>
+            </div>
+            <a className="profile-link" href={profileUrl} target="_blank" rel="noreferrer">
+              View GitHub profile
+            </a>
           </div>
-        ) : null}
-      </Card>
+
+          <Card className="repository-selector-card">
+            <div className="repository-selector-content">
+              <h1>Choose a repository</h1>
+              <p className="page-description">
+                Select one GitHub project and RepoGuard will generate a focused report.
+              </p>
+
+              {isLoadingRepositories ? (
+                <p className="state-note selector-state-note">Loading repositories from GitHub...</p>
+              ) : null}
+
+              {repositoriesError ? (
+                <p className="state-note state-note-danger selector-state-note">
+                  {repositoriesState.error}
+                </p>
+              ) : null}
+
+              {repositoriesEmpty ? (
+                <p className="state-note selector-state-note">
+                  No public repositories were returned for this account.
+                </p>
+              ) : null}
+
+              {repositoriesLoaded ? (
+                <div className="repository-dropdown" ref={dropdownRef}>
+                  <button
+                    type="button"
+                    className={`repository-dropdown-trigger ${isDropdownOpen ? 'repository-dropdown-trigger-open' : ''}`.trim()}
+                    onClick={handleToggleDropdown}
+                    aria-haspopup="listbox"
+                    aria-expanded={isDropdownOpen}
+                    aria-controls="repository-selector-listbox"
+                  >
+                    <span className="repository-dropdown-selected">
+                      {selectedRepository ? selectedRepository.fullName : 'Select repository'}
+                    </span>
+                    <span className="repository-dropdown-caret" aria-hidden="true">
+                      {isDropdownOpen ? '^' : 'v'}
+                    </span>
+                  </button>
+
+                  {isDropdownOpen ? (
+                    <ul
+                      id="repository-selector-listbox"
+                      className="repository-dropdown-menu"
+                      role="listbox"
+                      aria-label="GitHub repositories"
+                    >
+                      {repositories.map((repository) => {
+                        const isSelected =
+                          String(repository.id) === selectedRepositoryId
+                        return (
+                          <li
+                            key={repository.id}
+                            role="option"
+                            aria-selected={isSelected}
+                            className={isSelected ? 'repository-option-selected' : ''}
+                          >
+                            <button
+                              type="button"
+                              className="repository-option-button"
+                              onClick={() => handleSelectRepository(repository.id)}
+                            >
+                              <span className="repository-option-name">
+                                {repository.fullName}
+                              </span>
+                              <span className="repository-option-meta">
+                                {repository.language || 'Language not specified'} | Updated{' '}
+                                {formatDate(repository.pushedAt)}
+                              </span>
+                            </button>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
+
+              <div className="repository-selector-actions">
+                <Button
+                  type="button"
+                  onClick={handleInspectRepository}
+                  disabled={!canInspectRepository}
+                  className="repository-selector-inspect-button"
+                >
+                  Inspect repository
+                </Button>
+              </div>
+
+              <p className="repository-selector-support">
+                RepoGuard checks repository health, maintainability and defensive security
+                signals.
+              </p>
+            </div>
+          </Card>
+        </section>
+      ) : null}
     </div>
   )
 }

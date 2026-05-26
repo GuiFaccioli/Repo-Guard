@@ -392,6 +392,170 @@ a {
   gap: 0.72rem;
 }
 
+.repository-selector-page {
+  gap: 0.82rem;
+}
+
+.repository-selector-shell {
+  width: min(760px, 100%);
+  margin-inline: auto;
+  display: grid;
+  gap: 0.72rem;
+}
+
+.selector-connected-user {
+  border: 1px solid #2f425b;
+  border-radius: 0.85rem;
+  background: rgba(17, 30, 43, 0.82);
+  padding: 0.72rem 0.84rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.72rem;
+  flex-wrap: wrap;
+}
+
+.selector-connected-user-main {
+  display: flex;
+  align-items: center;
+  gap: 0.72rem;
+}
+
+.repository-selector-card {
+  padding: 1.2rem;
+}
+
+.repository-selector-content {
+  display: grid;
+  gap: 0.85rem;
+  justify-items: center;
+  text-align: center;
+}
+
+.repository-selector-content .page-description {
+  max-width: 56ch;
+}
+
+.selector-state-note {
+  width: 100%;
+  max-width: 620px;
+}
+
+.repository-dropdown {
+  position: relative;
+  width: min(560px, 100%);
+}
+
+.repository-dropdown-trigger {
+  width: 100%;
+  min-height: 2.75rem;
+  border-radius: 0.72rem;
+  border: 1px solid #2f425b;
+  background: rgba(15, 24, 35, 0.92);
+  color: var(--text);
+  padding: 0.58rem 0.7rem;
+  font-size: 0.92rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
+.repository-dropdown-trigger:hover {
+  border-color: #4f6a8d;
+}
+
+.repository-dropdown-trigger:focus-visible {
+  outline: 2px solid rgba(47, 129, 247, 0.55);
+  outline-offset: 1px;
+}
+
+.repository-dropdown-trigger-open {
+  border-color: rgba(47, 129, 247, 0.75);
+}
+
+.repository-dropdown-selected {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.repository-dropdown-caret {
+  color: #9eb4cb;
+  font-size: 0.8rem;
+  line-height: 1;
+}
+
+.repository-dropdown-menu {
+  list-style: none;
+  margin: 0.3rem 0 0;
+  padding: 0.25rem;
+  border: 1px solid #2f425b;
+  border-radius: 0.72rem;
+  background: #111b27;
+  max-height: 260px;
+  overflow-y: auto;
+  display: grid;
+  gap: 0.18rem;
+}
+
+.repository-option-button {
+  width: 100%;
+  min-height: 2.75rem;
+  border: 1px solid transparent;
+  border-radius: 0.58rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  padding: 0.5rem 0.58rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.repository-option-button:hover {
+  background: rgba(47, 129, 247, 0.14);
+}
+
+.repository-option-button:focus-visible {
+  outline: 2px solid rgba(47, 129, 247, 0.55);
+  outline-offset: 1px;
+}
+
+.repository-option-selected .repository-option-button {
+  border-color: rgba(47, 129, 247, 0.55);
+  background: rgba(47, 129, 247, 0.16);
+}
+
+.repository-option-name {
+  font-size: 0.9rem;
+  color: #d8e5f4;
+}
+
+.repository-option-meta {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.repository-selector-actions {
+  width: min(560px, 100%);
+  display: flex;
+  justify-content: center;
+}
+
+.repository-selector-inspect-button {
+  min-height: 2.75rem;
+}
+
+.repository-selector-support {
+  color: var(--text-muted);
+  max-width: 54ch;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
 .repositories-hero-compact {
   padding: 0.85rem;
 }
@@ -999,6 +1163,18 @@ a {
 
   .scan-select {
     width: 100%;
+  }
+
+  .repository-selector-card {
+    padding: 1rem;
+  }
+
+  .selector-connected-user {
+    align-items: flex-start;
+  }
+
+  .repository-option-meta {
+    font-size: 0.74rem;
   }
 }
 

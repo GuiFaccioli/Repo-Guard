@@ -28,6 +28,14 @@ const initialScanState = {
   error: '',
 }
 
+const HIDDEN_REPOSITORY_HEALTH_CHECK_IDS = new Set([
+  'recent-activity',
+  'open-issues',
+  'open-pull-requests',
+])
+
+const PRIORITY_REPOSITORY_HEALTH_CHECK_IDS = new Set(['dependabot'])
+
 const SAFE_SCAN_EVIDENCE_CACHE_KEY = 'repoguard.safeScanEvidence.v1'
 
 function readJsonStorage(key, fallbackValue) {
@@ -418,84 +426,104 @@ function LandingPage() {
           </Card>
 
           {Array.isArray(scanState.result.results)
-            ? scanState.result.results.map((group) => (
-                <Card key={group.checklist} className="scan-result-card" title={group.title}>
-                  <ul className="scan-result-list">
-                    {Array.isArray(group.items)
-                      ? group.items.map((item) => {
-                          const mappedCheckId = resolveRepositoryCheckId({
-                            label: item.label,
-                          })
-                          const fallbackCheckId =
-                            group.checklist === 'security_basics'
-                              ? 'hardcoded-secret'
-                              : 'readme'
-                          const checkId = mappedCheckId || fallbackCheckId
-                          const isPassed = item.status === 'pass'
-                          const isCodeSafetySignal = group.checklist === 'security_basics'
-                          const learnMoreLabel = isCodeSafetySignal
-                            ? isPassed
-                              ? 'Learn why this matters \u2197'
-                              : 'What\u2019s wrong? \u2197'
-                            : isPassed
-                              ? 'Learn why this matters \u2197'
-                              : 'Learn how to improve this \u2197'
+            ? scanState.result.results.map((group) => {
+                const visibleGroupItems = Array.isArray(group.items)
+                  ? group.items.filter((item) => {
+                      if (group.checklist !== 'good_practices') {
+                        return true
+                      }
 
-                          return (
-                            <li
-                              key={`${group.checklist}-${item.label}`}
-                              className={`scan-result-item scan-result-item-${item.status}`.trim()}
-                            >
-                              <div className="scan-result-copy">
-                                <p className="scan-result-title">
-                                  <span className="scan-result-icon" aria-hidden="true">
-                                    {item.status === 'pass' ? '\u2713' : '\u2715'}
-                                  </span>
-                                  <span className="scan-result-label">{item.label}</span>
-                                </p>
-                                {typeof item.filePath === 'string' && item.filePath.trim() ? (
-                                  <p className="scan-result-file">
-                                    File:{' '}
-                                    <span className="scan-result-file-path">{item.filePath}</span>
-                                  </p>
-                                ) : null}
-                                <p className="scan-result-details">{item.details}</p>
-                                <Link
-                                  className="scan-result-learn-more"
-                                  to={`/repositories/${routeRepositoryId}/checks/${checkId}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  state={{
-                                    repositoryFullName,
-                                    checklistId: group.checklist,
-                                    checkStatus: item.status,
-                                    checkLabel: item.label,
-                                    filePath:
-                                      typeof item.filePath === 'string' && item.filePath.trim()
-                                        ? item.filePath.trim()
-                                        : null,
-                                    lineNumber:
-                                      Number.isFinite(item.lineNumber) &&
-                                      Number(item.lineNumber) > 0
-                                        ? Math.floor(Number(item.lineNumber))
-                                        : null,
-                                    codeExcerpt:
-                                      typeof item.codeExcerpt === 'string' &&
-                                      item.codeExcerpt.trim()
-                                        ? item.codeExcerpt.trim().slice(0, 220)
-                                        : null,
-                                  }}
-                                >
-                                  {learnMoreLabel}
-                                </Link>
-                              </div>
-                            </li>
-                          )
+                      const itemCheckId = resolveRepositoryCheckId({
+                        label: item?.label,
+                      })
+
+                      return itemCheckId
+                        ? !HIDDEN_REPOSITORY_HEALTH_CHECK_IDS.has(itemCheckId)
+                        : true
+                    })
+                  : []
+
+                return (
+                  <Card key={group.checklist} className="scan-result-card" title={group.title}>
+                    <ul className="scan-result-list">
+                      {visibleGroupItems.map((item) => {
+                        const mappedCheckId = resolveRepositoryCheckId({
+                          label: item.label,
                         })
-                      : null}
-                  </ul>
-                </Card>
-              ))
+                        const fallbackCheckId =
+                          group.checklist === 'security_basics'
+                            ? 'hardcoded-secret'
+                            : 'readme'
+                        const checkId = mappedCheckId || fallbackCheckId
+                        const isPassed = item.status === 'pass'
+                        const isCodeSafetySignal = group.checklist === 'security_basics'
+                        const isPriorityCheck =
+                          !isCodeSafetySignal &&
+                          (PRIORITY_REPOSITORY_HEALTH_CHECK_IDS.has(checkId) ||
+                            /dependabot|dependency automation/i.test(String(item.label || '')))
+                        const learnMoreLabel = isCodeSafetySignal
+                          ? isPassed
+                            ? 'Learn why this matters \u2197'
+                            : 'What\u2019s wrong? \u2197'
+                          : isPassed
+                            ? 'Learn why this matters \u2197'
+                            : 'Learn how to improve this \u2197'
+
+                        return (
+                          <li
+                            key={`${group.checklist}-${item.label}`}
+                            className={`scan-result-item scan-result-item-${item.status}`.trim()}
+                          >
+                            <div className="scan-result-copy">
+                              <p className="scan-result-title">
+                                <span className="scan-result-icon" aria-hidden="true">
+                                  {item.status === 'pass' ? '\u2713' : '\u2715'}
+                                </span>
+                                <span className="scan-result-label">{item.label}</span>
+                                {isPriorityCheck ? (
+                                  <span className="scan-result-priority">Priority</span>
+                                ) : null}
+                              </p>
+                              {typeof item.filePath === 'string' && item.filePath.trim() ? (
+                                <p className="scan-result-file">
+                                  File: <span className="scan-result-file-path">{item.filePath}</span>
+                                </p>
+                              ) : null}
+                              <p className="scan-result-details">{item.details}</p>
+                              <Link
+                                className="scan-result-learn-more"
+                                to={`/repositories/${routeRepositoryId}/checks/${checkId}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                state={{
+                                  repositoryFullName,
+                                  checklistId: group.checklist,
+                                  checkStatus: item.status,
+                                  checkLabel: item.label,
+                                  filePath:
+                                    typeof item.filePath === 'string' && item.filePath.trim()
+                                      ? item.filePath.trim()
+                                      : null,
+                                  lineNumber:
+                                    Number.isFinite(item.lineNumber) && Number(item.lineNumber) > 0
+                                      ? Math.floor(Number(item.lineNumber))
+                                      : null,
+                                  codeExcerpt:
+                                    typeof item.codeExcerpt === 'string' && item.codeExcerpt.trim()
+                                      ? item.codeExcerpt.trim().slice(0, 220)
+                                      : null,
+                                }}
+                              >
+                                {learnMoreLabel}
+                              </Link>
+                            </div>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </Card>
+                )
+              })
             : null}
         </section>
       ) : null}

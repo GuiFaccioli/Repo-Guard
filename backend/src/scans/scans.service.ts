@@ -81,7 +81,14 @@ const SECRET_VALUE_PATTERNS = [
 ];
 
 const HARD_CODED_SECRET_LINE_PATTERN =
-  /\b(?:const|let|var)?\s*[A-Za-z0-9_$]*(?:api[_-]?key|token|secret|password|jwt[_-]?secret|client[_-]?secret)[A-Za-z0-9_$]*\s*[:=]\s*(['"`])([^'"`\n]{6,})\1/i;
+  /\b(?:const|let|var)?\s*([A-Za-z0-9_$]*(?:api[_-]?key|token|secret|password|jwt[_-]?secret|client[_-]?secret)[A-Za-z0-9_$]*)\s*[:=]\s*(['"`])([^'"`\n]{6,})\2/i;
+const SENSITIVE_SECRET_FIELD_PATTERN =
+  /(?:api[_-]?key|token|secret|password|jwt[_-]?secret|client[_-]?secret)/i;
+const METADATA_SECRET_FIELD_PATTERN =
+  /(?:checkid|guideid|recommendationkey|route|path|slug|title|label|topic|message|description)/i;
+const LOWERCASE_SLUG_VALUE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)+$/;
+const LOWERCASE_IDENTIFIER_VALUE_PATTERN = /^[a-z0-9]+(?:[_-][a-z0-9]+)+$/;
+const LOWERCASE_ROUTE_VALUE_PATTERN = /^\/[a-z0-9/_-]+$/;
 const PLACEHOLDER_SECRET_VALUE_PATTERN =
   /(your[_-]?|example|sample|placeholder|changeme|replace(?:[_-]?me)?|dummy|test|fake|null|undefined|xxxxx?)/i;
 const SQL_TEMPLATE_PATTERN =
@@ -1144,17 +1151,28 @@ export class ScansService {
           continue;
         }
 
-        const assignedValue = match[2]?.trim() || '';
-        if (!assignedValue || this.isPlaceholderSecretValue(assignedValue)) {
+        const sensitiveFieldName = match[1]?.trim() || '';
+        const assignedValue = match[3]?.trim() || '';
+        if (
+          !sensitiveFieldName ||
+          !this.isSensitiveSecretFieldName(sensitiveFieldName) ||
+          !assignedValue ||
+          this.isPlaceholderSecretValue(assignedValue)
+        ) {
           continue;
         }
 
-        const hasSecretEntropy = SECRET_VALUE_PATTERNS.some((pattern) =>
+        const hasStrongSecretPattern = SECRET_VALUE_PATTERNS.some((pattern) =>
           pattern.test(assignedValue),
         );
-        const looksSensitiveName = /api|token|secret|pass|jwt|key/i.test(line);
+        if (
+          !hasStrongSecretPattern &&
+          this.isMetadataSecretFieldName(sensitiveFieldName)
+        ) {
+          continue;
+        }
 
-        if (!hasSecretEntropy && !looksSensitiveName) {
+        if (!hasStrongSecretPattern && !this.isCredentialLikeValue(assignedValue)) {
           continue;
         }
 
@@ -1323,6 +1341,58 @@ export class ScansService {
 
   private isCommentLine(line: string): boolean {
     return /^(?:\/\/|\/\*|\*|#|<!--)/.test(line);
+  }
+
+  private isSensitiveSecretFieldName(fieldName: string): boolean {
+    return SENSITIVE_SECRET_FIELD_PATTERN.test(fieldName || '');
+  }
+
+  private isMetadataSecretFieldName(fieldName: string): boolean {
+    const normalized = String(fieldName || '').toLowerCase();
+    return (
+      METADATA_SECRET_FIELD_PATTERN.test(normalized) ||
+      normalized.endsWith('id') ||
+      normalized.endsWith('slug')
+    );
+  }
+
+  private isInternalIdentifierLikeValue(value: string): boolean {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) {
+      return false;
+    }
+
+    return (
+      LOWERCASE_SLUG_VALUE_PATTERN.test(normalized) ||
+      LOWERCASE_IDENTIFIER_VALUE_PATTERN.test(normalized) ||
+      LOWERCASE_ROUTE_VALUE_PATTERN.test(normalized)
+    );
+  }
+
+  private isCredentialLikeValue(value: string): boolean {
+    const normalized = String(value || '').trim();
+    if (!normalized) {
+      return false;
+    }
+
+    if (this.isInternalIdentifierLikeValue(normalized)) {
+      return false;
+    }
+
+    const hasLetter = /[A-Za-z]/.test(normalized);
+    const hasDigit = /\d/.test(normalized);
+    if (!hasLetter || !hasDigit) {
+      return false;
+    }
+
+    const hasMixedCase = /[a-z]/.test(normalized) && /[A-Z]/.test(normalized);
+    const hasSpecial = /[^A-Za-z0-9]/.test(normalized);
+
+    if (normalized.length >= 24) {
+      return true;
+    }
+
+    return normalized.length >= 16 && (hasMixedCase || hasSpecial);
   }
 
   private isPlaceholderSecretValue(value: string): boolean {

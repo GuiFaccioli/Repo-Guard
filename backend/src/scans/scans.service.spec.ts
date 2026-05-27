@@ -395,7 +395,7 @@ describe('ScansService', () => {
       ].join('\n'),
       'backend/src/scans/safe-evidence-packet.spec.ts': [
         'describe("fixtures", () => {',
-        "  const rawSecret = 'sk_live_FAKE_TEST_TOKEN_FOR_FIXTURE_ONLY_12345';",
+        "  const rawSecret = 'TRAINING_SECRET_VALUE_ABC123XYZ789';",
         '  app.enableCors({ origin: "*" });',
         '});',
       ].join('\n'),
@@ -537,5 +537,256 @@ describe('ScansService', () => {
     expect(aiReviewCheckIds.has('permissive-cors')).toBe(true);
     expect(aiReviewCheckIds.has('sql-string-concatenation')).toBe(true);
     expect(aiReviewCheckIds.has('committed-env-file')).toBe(true);
+  });
+
+  it('should ignore internal slug and label values in hardcoded-secret detection', async () => {
+    const mockFileContent = [
+      'const internalChecks = {',
+      "  possiblehardcodedsecret: 'hardcoded-secret',",
+      "  checkId: 'hardcoded-secret',",
+      "  guideId: 'hardcoded-secret',",
+      "  recommendationKey: 'move-secret-to-env',",
+      "  route: '/checks/hardcoded-secret',",
+      "  title: 'Possible hardcoded secret',",
+      "  label: 'Learn about hardcoded secrets',",
+      '};',
+    ].join('\n');
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (
+        url.includes('https://api.github.com/repos/RepoOwner/RepoName') &&
+        !url.includes('/git/trees/')
+      ) {
+        return toJsonResponse({
+          default_branch: 'main',
+          pushed_at: '2026-05-26T00:00:00.000Z',
+        });
+      }
+
+      if (
+        url.includes(
+          'https://api.github.com/repos/RepoOwner/RepoName/git/trees/main?recursive=1',
+        )
+      ) {
+        return toJsonResponse({
+          tree: [{ path: 'backend/src/scans/safe-evidence-packet.ts' }],
+        });
+      }
+
+      if (
+        url.includes('https://api.github.com/search/issues') &&
+        url.includes('is:issue')
+      ) {
+        return toJsonResponse({ total_count: 0 });
+      }
+
+      if (
+        url.includes('https://api.github.com/search/issues') &&
+        url.includes('is:pr')
+      ) {
+        return toJsonResponse({ total_count: 0 });
+      }
+
+      if (url.includes('https://raw.githubusercontent.com/')) {
+        return toTextResponse(mockFileContent);
+      }
+
+      throw new Error(`Unexpected fetch URL in test: ${url}`);
+    });
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const response = await scansService.runScan(
+      'https://github.com/RepoOwner/RepoName',
+      ['security_basics'],
+    );
+
+    const securityBasics = response.results.find(
+      (result) => result.checklist === 'security_basics',
+    );
+    const hardcodedSecretItem = securityBasics?.items.find(
+      (item) => item.label === 'Possible hardcoded secret',
+    );
+
+    expect(hardcodedSecretItem?.status).toBe('pass');
+    expect(JSON.stringify(hardcodedSecretItem)).not.toContain('hardcoded-secret');
+
+    const failedFindingCheckIds = response.evidencePacket!.findings
+      .filter((finding) => finding.status === 'fail')
+      .map((finding) => finding.checkId);
+    expect(failedFindingCheckIds).not.toContain('hardcoded-secret');
+
+    const hardcodedSecretFinding = response.evidencePacket!.findings.find(
+      (finding) => finding.checkId === 'hardcoded-secret',
+    );
+    expect(hardcodedSecretFinding?.status).toBe('pass');
+    expect(hardcodedSecretFinding?.safeExcerpt).toBeUndefined();
+    expect(hardcodedSecretFinding?.filePath).toBeUndefined();
+
+    const aiReviewCheckIds = new Set(
+      response.aiReview!.topics.flatMap((topic) => topic.evidenceCheckIds),
+    );
+    expect(aiReviewCheckIds.has('hardcoded-secret')).toBe(false);
+    expect(JSON.stringify(response.aiReview)).not.toContain('hardcoded-secret');
+  });
+
+  it('should still detect real-looking hardcoded apiKey values', async () => {
+    const mockFileContent = [
+      'const config = {',
+      '  apiKey: "AlphaBetaGammaDelta1234567890",',
+      '};',
+    ].join('\n');
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (
+        url.includes('https://api.github.com/repos/RepoOwner/RepoName') &&
+        !url.includes('/git/trees/')
+      ) {
+        return toJsonResponse({
+          default_branch: 'main',
+          pushed_at: '2026-05-26T00:00:00.000Z',
+        });
+      }
+
+      if (
+        url.includes(
+          'https://api.github.com/repos/RepoOwner/RepoName/git/trees/main?recursive=1',
+        )
+      ) {
+        return toJsonResponse({
+          tree: [{ path: 'backend/src/config.ts' }],
+        });
+      }
+
+      if (
+        url.includes('https://api.github.com/search/issues') &&
+        url.includes('is:issue')
+      ) {
+        return toJsonResponse({ total_count: 0 });
+      }
+
+      if (
+        url.includes('https://api.github.com/search/issues') &&
+        url.includes('is:pr')
+      ) {
+        return toJsonResponse({ total_count: 0 });
+      }
+
+      if (url.includes('https://raw.githubusercontent.com/')) {
+        return toTextResponse(mockFileContent);
+      }
+
+      throw new Error(`Unexpected fetch URL in test: ${url}`);
+    });
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const response = await scansService.runScan(
+      'https://github.com/RepoOwner/RepoName',
+      ['security_basics'],
+    );
+    const securityBasics = response.results.find(
+      (result) => result.checklist === 'security_basics',
+    );
+    const hardcodedSecretItem = securityBasics?.items.find(
+      (item) => item.label === 'Possible hardcoded secret',
+    );
+
+    expect(hardcodedSecretItem?.status).toBe('fail');
+    expect(hardcodedSecretItem?.codeExcerpt).toContain('Alph********');
+    expect(
+      response.evidencePacket!.findings.some(
+        (finding) =>
+          finding.checkId === 'hardcoded-secret' && finding.status === 'fail',
+      ),
+    ).toBe(true);
+    expect(
+      response.aiReview!.topics.some((topic) =>
+        topic.evidenceCheckIds.includes('hardcoded-secret'),
+      ),
+    ).toBe(true);
+  });
+
+  it('should still detect real-looking hardcoded token values', async () => {
+    const mockFileContent = [
+      'const auth = {',
+      '  token: "QwertyTokenValue987654321XyZ",',
+      '};',
+    ].join('\n');
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (
+        url.includes('https://api.github.com/repos/RepoOwner/RepoName') &&
+        !url.includes('/git/trees/')
+      ) {
+        return toJsonResponse({
+          default_branch: 'main',
+          pushed_at: '2026-05-26T00:00:00.000Z',
+        });
+      }
+
+      if (
+        url.includes(
+          'https://api.github.com/repos/RepoOwner/RepoName/git/trees/main?recursive=1',
+        )
+      ) {
+        return toJsonResponse({
+          tree: [{ path: 'backend/src/auth.ts' }],
+        });
+      }
+
+      if (
+        url.includes('https://api.github.com/search/issues') &&
+        url.includes('is:issue')
+      ) {
+        return toJsonResponse({ total_count: 0 });
+      }
+
+      if (
+        url.includes('https://api.github.com/search/issues') &&
+        url.includes('is:pr')
+      ) {
+        return toJsonResponse({ total_count: 0 });
+      }
+
+      if (url.includes('https://raw.githubusercontent.com/')) {
+        return toTextResponse(mockFileContent);
+      }
+
+      throw new Error(`Unexpected fetch URL in test: ${url}`);
+    });
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const response = await scansService.runScan(
+      'https://github.com/RepoOwner/RepoName',
+      ['security_basics'],
+    );
+    const securityBasics = response.results.find(
+      (result) => result.checklist === 'security_basics',
+    );
+    const hardcodedSecretItem = securityBasics?.items.find(
+      (item) => item.label === 'Possible hardcoded secret',
+    );
+
+    expect(hardcodedSecretItem?.status).toBe('fail');
+    expect(hardcodedSecretItem?.codeExcerpt).toContain('Qwer********');
+    expect(
+      response.evidencePacket!.findings.some(
+        (finding) =>
+          finding.checkId === 'hardcoded-secret' && finding.status === 'fail',
+      ),
+    ).toBe(true);
+    expect(
+      response.aiReview!.topics.some((topic) =>
+        topic.evidenceCheckIds.includes('hardcoded-secret'),
+      ),
+    ).toBe(true);
   });
 });

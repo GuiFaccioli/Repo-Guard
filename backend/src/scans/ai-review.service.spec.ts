@@ -137,7 +137,7 @@ describe('AiReviewService', () => {
   });
 
   it('does not include raw secret strings in the review report', () => {
-    const rawSecret = 'sk_live_1234567890abcdef';
+    const rawSecret = 'TRAINING_SECRET_VALUE_ABC123XYZ789';
     const report = service.generateFromEvidencePacket({
       ...basePacket,
       findings: [

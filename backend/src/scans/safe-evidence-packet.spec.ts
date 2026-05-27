@@ -171,7 +171,7 @@ describe('buildSafeEvidencePacket', () => {
             label: 'Possible hardcoded secret',
             status: 'fail',
             details: 'A secret-like value appears to be written directly in code.',
-            codeExcerpt: 'const apiKey = "sk_live_abcdef1234567890";',
+            codeExcerpt: 'const apiKey = "LOCAL_DEMO_SECRET_VALUE_ABC123456";',
           },
         ],
       },
@@ -183,9 +183,7 @@ describe('buildSafeEvidencePacket', () => {
       results,
     });
 
-    expect(packet.findings[0].safeExcerpt).toBe(
-      'const apiKey = "sk_live_********";',
-    );
+    expect(packet.findings[0].safeExcerpt).toBe('const apiKey = "LOCA********";');
   });
 
   it('should mask hardcoded-secret values inside code context lines', () => {

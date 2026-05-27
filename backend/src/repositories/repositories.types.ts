@@ -58,8 +58,42 @@ export interface ListRepositoriesResponse {
   repositories: RepositoryListItem[];
 }
 
-export type ScanType = 'green' | 'yellow' | 'red';
+export type ScanType = 'general';
 export type ScanSeverity = 'high' | 'medium' | 'low' | 'none';
+export type DidacticStatus = 'green' | 'yellow' | 'red';
+export type DidacticConfidence = 'high' | 'medium' | 'low';
+export type RepositoryContextKind =
+  | 'fullstack-app'
+  | 'library-sdk'
+  | 'scientific'
+  | 'automation'
+  | 'unknown';
+
+export interface SourceReference {
+  title: string;
+  url: string;
+  sourceType: 'official' | 'community' | 'specification';
+}
+
+export interface DidacticCheckResult {
+  checkId: RepositoryCheckResult['key'];
+  label: string;
+  status: DidacticStatus;
+  confidence: DidacticConfidence;
+  whatChecked: string;
+  whyItMatters: string;
+  whatFound: string;
+  suggestedAction: string;
+  sources: SourceReference[];
+  uncertaintyNote?: string;
+}
+
+export interface RepositoryContextProfile {
+  primary: RepositoryContextKind;
+  secondary: RepositoryContextKind[];
+  confidence: DidacticConfidence;
+  signals: string[];
+}
 export type ScanCategory =
   | 'basic-health'
   | 'basic-security'
@@ -117,12 +151,14 @@ export interface RepositoryScanResponse {
     fullName: string;
     htmlUrl: string;
   };
-  score: number;
   summary: {
-    passed: number;
-    failed: number;
+    green: number;
+    yellow: number;
+    red: number;
     highestSeverity: ScanSeverity;
   };
+  context: RepositoryContextProfile;
   checks: RepositoryCheckResult[];
+  didacticChecks: DidacticCheckResult[];
   recommendations: RepositoryRecommendation[];
 }

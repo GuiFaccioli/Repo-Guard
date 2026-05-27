@@ -1,10 +1,6 @@
-import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import { Controller, Get, Param, Post, Req } from '@nestjs/common';
 import type { Request } from 'express';
 import { RepositoriesService } from './repositories.service';
-
-interface RunScanBody {
-  scanType?: string;
-}
 
 @Controller('repositories')
 export class RepositoriesController {
@@ -18,15 +14,7 @@ export class RepositoriesController {
   }
 
   @Post(':id/scans')
-  async runRepositoryScan(
-    @Req() req: Request,
-    @Param('id') id: string,
-    @Body() body: RunScanBody,
-  ) {
-    return this.repositoriesService.scanRepositoryById(
-      req.session,
-      id,
-      body?.scanType,
-    );
+  async runRepositoryScan(@Req() req: Request, @Param('id') id: string) {
+    return this.repositoriesService.scanRepositoryById(req.session, id);
   }
 }

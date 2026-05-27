@@ -18,41 +18,12 @@ import type {
   ScanSeverity,
   ScanType,
 } from './repositories.types';
+import {
+  buildDidacticChecks,
+  inferRepositoryContext,
+} from './scanner-evaluation';
 
 type AppSession = Session & Partial<SessionData>;
-
-type GreenCheckKey =
-  | 'readme'
-  | 'gitignore'
-  | 'packageJson'
-  | 'dependabot'
-  | 'githubActions'
-  | 'license'
-  | 'recentActivity'
-  | 'openIssues'
-  | 'openPullRequests';
-
-type YellowCheckKey =
-  | 'scripts'
-  | 'testScript'
-  | 'buildScript'
-  | 'lintScript'
-  | 'envExample'
-  | 'docsStructure'
-  | 'srcFolder'
-  | 'testsStructure'
-  | 'lockfile'
-  | 'readmeInstructions';
-
-type RedCheckKey =
-  | 'committedEnv'
-  | 'hardcodedSecrets'
-  | 'evalUsage'
-  | 'sqlStringConcatenation'
-  | 'permissiveCors'
-  | 'sensitiveConsoleLogs'
-  | 'hardcodedApiKeys'
-  | 'envUsageWithoutExample';
 
 interface RepositoryScanContext {
   accessToken: string;
@@ -78,42 +49,6 @@ interface GithubContentFileResponse {
   encoding?: string;
   content?: string;
 }
-
-const GREEN_WEIGHTS: Record<GreenCheckKey, number> = {
-  readme: 10,
-  gitignore: 8,
-  packageJson: 8,
-  dependabot: 15,
-  githubActions: 15,
-  license: 10,
-  recentActivity: 14,
-  openIssues: 10,
-  openPullRequests: 10,
-};
-
-const YELLOW_WEIGHTS: Record<YellowCheckKey, number> = {
-  scripts: 10,
-  testScript: 10,
-  buildScript: 8,
-  lintScript: 8,
-  envExample: 10,
-  docsStructure: 10,
-  srcFolder: 10,
-  testsStructure: 10,
-  lockfile: 12,
-  readmeInstructions: 12,
-};
-
-const RED_WEIGHTS: Record<RedCheckKey, number> = {
-  committedEnv: 15,
-  hardcodedSecrets: 20,
-  evalUsage: 15,
-  sqlStringConcatenation: 15,
-  permissiveCors: 10,
-  sensitiveConsoleLogs: 10,
-  hardcodedApiKeys: 10,
-  envUsageWithoutExample: 5,
-};
 
 const ISSUE_THRESHOLD = 25;
 const PULL_REQUEST_THRESHOLD = 10;
@@ -193,17 +128,19 @@ export class RepositoriesService {
   async scanRepositoryById(
     session: AppSession,
     repositoryIdRaw: string,
-    scanTypeInput?: unknown,
   ): Promise<RepositoryScanResponse> {
     const accessToken = this.requireGithubAccessToken(session);
     const repositoryId = Number.parseInt(repositoryIdRaw, 10);
-    const scanType = this.normalizeScanType(scanTypeInput);
+    const scanType: ScanType = 'general';
 
     if (!Number.isInteger(repositoryId) || repositoryId <= 0) {
       throw new BadRequestException('Invalid repository id.');
     }
 
-    const repository = await this.fetchRepositoryById(repositoryId, accessToken);
+    const repository = await this.fetchRepositoryById(
+      repositoryId,
+      accessToken,
+    );
 
     if (repository.private) {
       throw new ForbiddenException(
@@ -224,16 +161,43 @@ export class RepositoriesService {
       fullName: repository.full_name,
     };
 
-    const scanData =
-      scanType === 'green'
-        ? await this.runGreenScan(context)
-        : scanType === 'yellow'
-          ? await this.runYellowScan(context)
-          : await this.runRedScan(context);
+    const [greenScanData, yellowScanData, redScanData] = await Promise.all([
+      this.runGreenScan(context),
+      this.runYellowScan(context),
+      this.runRedScan(context),
+    ]);
 
-    const score = this.calculateScore(scanData.checks, scanType);
-    const failedChecks = scanData.checks.filter((check) => !check.passed);
-    const highestSeverity = this.getHighestSeverity(failedChecks);
+    const checks = [
+      ...greenScanData.checks,
+      ...yellowScanData.checks,
+      ...redScanData.checks,
+    ];
+
+    const recommendations = this.uniqueRecommendations([
+      ...greenScanData.recommendations,
+      ...yellowScanData.recommendations,
+      ...redScanData.recommendations,
+    ]);
+
+    const contextProfile = inferRepositoryContext(checks, repository.full_name);
+    const didacticChecks = buildDidacticChecks(checks, contextProfile).map(
+      (item) => ({
+        checkId: item.check_id,
+        label: item.label,
+        status: item.status,
+        confidence: item.confidence,
+        whatChecked: item.what_checked,
+        whyItMatters: item.why_it_matters,
+        whatFound: item.what_found,
+        suggestedAction: item.suggested_action,
+        sources: item.sources,
+        uncertaintyNote: item.uncertainty_note,
+      }),
+    );
+
+    const highestSeverity = this.getHighestSeverity(
+      checks.filter((check) => !check.passed),
+    );
 
     return {
       scanType,
@@ -243,14 +207,18 @@ export class RepositoriesService {
         fullName: repository.full_name,
         htmlUrl: repository.html_url,
       },
-      score,
       summary: {
-        passed: scanData.checks.filter((check) => check.passed).length,
-        failed: failedChecks.length,
+        green: didacticChecks.filter((check) => check.status === 'green')
+          .length,
+        yellow: didacticChecks.filter((check) => check.status === 'yellow')
+          .length,
+        red: didacticChecks.filter((check) => check.status === 'red').length,
         highestSeverity,
       },
-      checks: scanData.checks,
-      recommendations: scanData.recommendations,
+      context: contextProfile,
+      checks,
+      didacticChecks,
+      recommendations,
     };
   }
 
@@ -275,20 +243,24 @@ export class RepositoriesService {
         }),
       ]);
 
-    const [workflowsExist, licenseExists, openIssuesCount, openPullRequestsCount] =
-      await Promise.all([
-        this.hasGithubActionsWorkflows(
-          context.accessToken,
-          context.owner,
-          context.repoName,
-        ),
-        this.pathExists({
-          accessToken: context.accessToken,
-          endpoint: `https://api.github.com/repos/${context.owner}/${context.repoName}/license`,
-        }),
-        this.fetchOpenSearchCount(context.accessToken, context.fullName, 'issue'),
-        this.fetchOpenSearchCount(context.accessToken, context.fullName, 'pr'),
-      ]);
+    const [
+      workflowsExist,
+      licenseExists,
+      openIssuesCount,
+      openPullRequestsCount,
+    ] = await Promise.all([
+      this.hasGithubActionsWorkflows(
+        context.accessToken,
+        context.owner,
+        context.repoName,
+      ),
+      this.pathExists({
+        accessToken: context.accessToken,
+        endpoint: `https://api.github.com/repos/${context.owner}/${context.repoName}/license`,
+      }),
+      this.fetchOpenSearchCount(context.accessToken, context.fullName, 'issue'),
+      this.fetchOpenSearchCount(context.accessToken, context.fullName, 'pr'),
+    ]);
 
     const daysSinceLastPush = this.daysSince(context.repository.pushed_at);
     const recentActivity = daysSinceLastPush <= RECENT_ACTIVITY_DAYS;
@@ -394,7 +366,10 @@ export class RepositoriesService {
 
   private async runYellowScan(context: RepositoryScanContext) {
     const tree = await this.fetchRepositoryTree(context);
-    const packageJsonText = await this.fetchTextFileByPath(context, 'package.json');
+    const packageJsonText = await this.fetchTextFileByPath(
+      context,
+      'package.json',
+    );
     const readmeText = await this.fetchReadmeText(context);
 
     const packageJsonData = this.parseJsonObject(packageJsonText);
@@ -552,7 +527,11 @@ export class RepositoriesService {
       /(?:api[_-]?key|client[_-]?secret|access[_-]?token|password|secret)\s*[:=]\s*['"][^'"\n]{8,}['"]/i,
     );
 
-    const evalUsageFound = this.containsPatternForExtensions(fileContents, ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'], /\beval\s*\(/i);
+    const evalUsageFound = this.containsPatternForExtensions(
+      fileContents,
+      ['.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs'],
+      /\beval\s*\(/i,
+    );
 
     const sqlConcatFound = this.containsPatternForExtensions(
       fileContents,
@@ -571,13 +550,15 @@ export class RepositoriesService {
       /console\.(?:log|debug|info|warn|error)\s*\([^)]*(?:token|secret|password|api[_-]?key)[^)]*\)/i,
     );
 
-    const hardcodedFrontendApiFound = this.containsPatternOnFrontendFiles(
-      fileContents,
-      /(?:VITE_API_URL|API_URL|BASE_URL)\s*[:=]\s*['"]https?:\/\/[^'"]+['"]/i,
-    ) || this.containsPatternOnFrontendFiles(
-      fileContents,
-      /(?:api[_-]?key|client[_-]?secret)\s*[:=]\s*['"][^'"\n]{8,}['"]/i,
-    );
+    const hardcodedFrontendApiFound =
+      this.containsPatternOnFrontendFiles(
+        fileContents,
+        /(?:VITE_API_URL|API_URL|BASE_URL)\s*[:=]\s*['"]https?:\/\/[^'"]+['"]/i,
+      ) ||
+      this.containsPatternOnFrontendFiles(
+        fileContents,
+        /(?:api[_-]?key|client[_-]?secret)\s*[:=]\s*['"][^'"\n]{8,}['"]/i,
+      );
 
     const envUsageFound = this.containsPatternForExtensions(
       fileContents,
@@ -675,20 +656,6 @@ export class RepositoriesService {
     };
   }
 
-  private normalizeScanType(scanTypeInput: unknown): ScanType {
-    if (scanTypeInput === undefined || scanTypeInput === null || scanTypeInput === '') {
-      return 'green';
-    }
-
-    if (scanTypeInput === 'green' || scanTypeInput === 'yellow' || scanTypeInput === 'red') {
-      return scanTypeInput;
-    }
-
-    throw new BadRequestException(
-      "Invalid scanType. Supported values: 'green', 'yellow', 'red'.",
-    );
-  }
-
   private requireGithubAccessToken(session: AppSession) {
     const accessToken = session.githubAccessToken;
     const githubUser = session.githubUser;
@@ -760,7 +727,10 @@ export class RepositoriesService {
     return tree.lowerPathSet.has(path.toLowerCase());
   }
 
-  private treeHasFolderPrefix(tree: RepositoryTreeData, prefix: string): boolean {
+  private treeHasFolderPrefix(
+    tree: RepositoryTreeData,
+    prefix: string,
+  ): boolean {
     const lowerPrefix = prefix.toLowerCase();
     return tree.entries.some((entry) =>
       entry.path.toLowerCase().startsWith(lowerPrefix),
@@ -828,7 +798,9 @@ export class RepositoriesService {
     }
   }
 
-  private async fetchReadmeText(context: RepositoryScanContext): Promise<string | null> {
+  private async fetchReadmeText(
+    context: RepositoryScanContext,
+  ): Promise<string | null> {
     const response = await this.githubFetch(
       `https://api.github.com/repos/${context.owner}/${context.repoName}/readme`,
       context.accessToken,
@@ -912,7 +884,9 @@ export class RepositoriesService {
       return false;
     }
 
-    return TEXT_FILE_EXTENSIONS.some((extension) => lowerPath.endsWith(extension));
+    return TEXT_FILE_EXTENSIONS.some((extension) =>
+      lowerPath.endsWith(extension),
+    );
   }
 
   private async fetchManyTextFiles(
@@ -1033,29 +1007,6 @@ export class RepositoriesService {
     return Number(payload?.total_count ?? 0);
   }
 
-  private calculateScore(checks: RepositoryCheckResult[], scanType: ScanType): number {
-    const scoreMap =
-      scanType === 'green'
-        ? GREEN_WEIGHTS
-        : scanType === 'yellow'
-          ? YELLOW_WEIGHTS
-          : RED_WEIGHTS;
-
-    let score = 0;
-    for (const check of checks) {
-      if (!check.passed) {
-        continue;
-      }
-
-      const checkScore = scoreMap[check.key as keyof typeof scoreMap];
-      if (typeof checkScore === 'number') {
-        score += checkScore;
-      }
-    }
-
-    return Math.max(0, Math.min(100, score));
-  }
-
   private getHighestSeverity(
     failedChecks: RepositoryCheckResult[],
   ): ScanSeverity {
@@ -1103,7 +1054,8 @@ export class RepositoriesService {
       if (check.key === 'recentActivity') {
         recommendations.push({
           priority:
-            daysSinceLastPush !== null && daysSinceLastPush > INACTIVE_ACTIVITY_DAYS
+            daysSinceLastPush !== null &&
+            daysSinceLastPush > INACTIVE_ACTIVITY_DAYS
               ? 'high'
               : 'medium',
           title: 'Increase repository maintenance activity',
@@ -1202,7 +1154,10 @@ export class RepositoriesService {
         });
       }
 
-      if (check.key === 'envExample' || check.key === 'envUsageWithoutExample') {
+      if (
+        check.key === 'envExample' ||
+        check.key === 'envUsageWithoutExample'
+      ) {
         recommendations.push({
           priority: 'medium',
           title: 'Provide environment variable templates',
@@ -1229,7 +1184,10 @@ export class RepositoriesService {
         });
       }
 
-      if (check.key === 'hardcodedSecrets' || check.key === 'hardcodedApiKeys') {
+      if (
+        check.key === 'hardcodedSecrets' ||
+        check.key === 'hardcodedApiKeys'
+      ) {
         recommendations.push({
           priority: 'high',
           title: 'Replace hardcoded credentials',
@@ -1261,7 +1219,7 @@ export class RepositoriesService {
           priority: 'medium',
           title: 'Restrict CORS origin configuration',
           description:
-            "Avoid wildcard origins in production and allow only trusted frontend origins.",
+            'Avoid wildcard origins in production and allow only trusted frontend origins.',
         });
       }
 
@@ -1310,7 +1268,9 @@ export class RepositoriesService {
 
   private throwGithubError(statusCode: number): never {
     if (statusCode === 401 || statusCode === 403) {
-      throw new UnauthorizedException('GitHub session expired. Please reconnect.');
+      throw new UnauthorizedException(
+        'GitHub session expired. Please reconnect.',
+      );
     }
 
     if (statusCode === 404) {

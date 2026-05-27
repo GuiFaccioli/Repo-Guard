@@ -1,12 +1,30 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { useEffect } from 'react'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import AppLayout from './components/AppLayout'
 import LandingPage from './pages/LandingPage'
 import AuthCallbackPage from './pages/AuthCallbackPage'
 import RepositoryListPage from './pages/RepositoryListPage'
 import RepositoryDetailPage from './pages/RepositoryDetailPage'
 import RepositoryCheckGuidePage from './pages/RepositoryCheckGuidePage'
+import { initAnalytics, trackPageView } from './lib/analytics'
 
 function App() {
+  const location = useLocation()
+
+  useEffect(() => {
+    initAnalytics()
+  }, [])
+
+  useEffect(() => {
+    const animationFrame = window.requestAnimationFrame(() => {
+      trackPageView(location.pathname, document.title)
+    })
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame)
+    }
+  }, [location.pathname])
+
   return (
     <Routes>
       <Route element={<AppLayout />}>

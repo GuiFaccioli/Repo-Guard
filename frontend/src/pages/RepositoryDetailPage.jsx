@@ -3,8 +3,18 @@ import { Link, useParams } from 'react-router-dom'
 import Button from '../components/Button'
 import Card from '../components/Card'
 import {
+  CODE_SAFETY_CHECK_IDS,
   buildOrderedRepositoryChecks,
+  resolveRepositoryCheckId,
 } from '../data/repositoryCheckGuides'
+import {
+  trackLearnMoreOpened,
+  trackLearnWhyThisMattersOpened,
+  trackScanCompleted,
+  trackScanFailed,
+  trackScanStarted,
+  trackWhatsWrongOpened,
+} from '../lib/analytics'
 import { buildBackendUrl, normalizeApiBaseUrl } from '../utils/apiUrl'
 
 const SCAN_CACHE_KEY = 'repoguard.scanResults.v1'
@@ -15,6 +25,7 @@ const STATUS_OK_LABEL = '\u2713 OK'
 const STATUS_MISSING_LABEL = '\u2715 Missing'
 const STATUS_OK_PREFIX = '\u2713'
 const STATUS_MISSING_PREFIX = '\u2715'
+const GREEN_SCAN_ANALYTICS_TYPE = 'green'
 const activeScanRequests = new Map()
 
 const initialAuthState = {
@@ -84,7 +95,90 @@ function normalizeScanSnapshots(value) {
   return Object.fromEntries(normalizedEntries.filter((entry) => entry[1]))
 }
 
-function RepositoryCheckLearnMoreLink({ repositoryId, checkId, state }) {
+function normalizeRepositoryVisibility(repository) {
+  if (repository?.private === true || repository?.isPrivate === true) {
+    return 'private'
+  }
+
+  if (repository?.private === false || repository?.isPrivate === false) {
+    return 'public'
+  }
+
+  if (typeof repository?.visibility !== 'string') {
+    return null
+  }
+
+  const normalizedVisibility = repository.visibility.trim().toLowerCase()
+  return ['public', 'private', 'internal'].includes(normalizedVisibility)
+    ? normalizedVisibility
+    : null
+}
+
+function parseRepositoryFullName(fullName) {
+  if (typeof fullName !== 'string' || !fullName.trim()) {
+    return { owner: null, name: null }
+  }
+
+  const [owner, name] = fullName.split('/').map((part) => part.trim())
+  return {
+    owner: owner || null,
+    name: name || null,
+  }
+}
+
+function buildRepositoryAnalyticsParams(repository) {
+  const parsedFullName = parseRepositoryFullName(repository?.fullName)
+  const repositoryOwner =
+    typeof repository?.owner === 'string' && repository.owner.trim()
+      ? repository.owner.trim().slice(0, 120)
+      : parsedFullName.owner
+        ? parsedFullName.owner.slice(0, 120)
+        : null
+  const repositoryName =
+    typeof repository?.name === 'string' && repository.name.trim()
+      ? repository.name.trim().slice(0, 120)
+      : parsedFullName.name
+        ? parsedFullName.name.slice(0, 120)
+        : null
+  const repositoryVisibility = normalizeRepositoryVisibility(repository)
+
+  return {
+    ...(repositoryOwner ? { repository_owner: repositoryOwner } : {}),
+    ...(repositoryName ? { repository_name: repositoryName } : {}),
+    ...(repositoryVisibility ? { repository_visibility: repositoryVisibility } : {}),
+  }
+}
+
+function buildFailedCheckCounts(scanResult) {
+  const scanChecks = Array.isArray(scanResult?.checks) ? scanResult.checks : []
+  let failedCheckCount = 0
+  let codeSafetyFailedCount = 0
+  let repositoryHealthFailedCount = 0
+
+  for (const check of scanChecks) {
+    if (check?.passed === true) {
+      continue
+    }
+
+    failedCheckCount += 1
+
+    const checkId = resolveRepositoryCheckId(check)
+    if (checkId && CODE_SAFETY_CHECK_IDS.has(checkId)) {
+      codeSafetyFailedCount += 1
+      continue
+    }
+
+    repositoryHealthFailedCount += 1
+  }
+
+  return {
+    failed_check_count: failedCheckCount,
+    code_safety_failed_count: codeSafetyFailedCount,
+    repository_health_failed_count: repositoryHealthFailedCount,
+  }
+}
+
+function RepositoryCheckLearnMoreLink({ repositoryId, checkId, state, onClick }) {
   return (
     <Link
       className="report-line-action"
@@ -92,13 +186,21 @@ function RepositoryCheckLearnMoreLink({ repositoryId, checkId, state }) {
       target="_blank"
       rel="noopener noreferrer"
       state={state}
+      onClick={onClick}
     >
       Learn more {'\u2197'}
     </Link>
   )
 }
 
-function RepositoryCheckRow({ prefix, label, repositoryId, checkId, state }) {
+function RepositoryCheckRow({
+  prefix,
+  label,
+  repositoryId,
+  checkId,
+  state,
+  onLearnMoreClick,
+}) {
   return (
     <li className="report-line-row">
       <span className="report-line-copy">
@@ -109,6 +211,7 @@ function RepositoryCheckRow({ prefix, label, repositoryId, checkId, state }) {
         repositoryId={repositoryId}
         checkId={checkId}
         state={state}
+        onClick={onLearnMoreClick}
       />
     </li>
   )
@@ -348,12 +451,21 @@ function RepositoryDetailPage() {
   }, [hasValidRepositoryId, repositoriesUrl, repositoryId])
 
   const runGreenScan = useCallback(async () => {
+    const repositoryAnalyticsParams = buildRepositoryAnalyticsParams(
+      repositoryState.repository,
+    )
+
     if (!hasValidRepositoryId) {
       setScanState({
         status: 'error',
         result: null,
         completedAt: null,
         error: 'invalid_repository_id',
+      })
+      trackScanFailed({
+        ...repositoryAnalyticsParams,
+        scan_type: GREEN_SCAN_ANALYTICS_TYPE,
+        error_reason: 'invalid_repository_id',
       })
       return
     }
@@ -364,6 +476,11 @@ function RepositoryDetailPage() {
         result: null,
         completedAt: null,
         error: 'missing_api_configuration',
+      })
+      trackScanFailed({
+        ...repositoryAnalyticsParams,
+        scan_type: GREEN_SCAN_ANALYTICS_TYPE,
+        error_reason: 'missing_api_configuration',
       })
       return
     }
@@ -376,6 +493,10 @@ function RepositoryDetailPage() {
       result: null,
       completedAt: null,
       error: '',
+    })
+    trackScanStarted({
+      ...repositoryAnalyticsParams,
+      scan_type: GREEN_SCAN_ANALYTICS_TYPE,
     })
 
     try {
@@ -390,6 +511,11 @@ function RepositoryDetailPage() {
         result: scanResult,
         completedAt,
         error: '',
+      })
+      trackScanCompleted({
+        ...repositoryAnalyticsParams,
+        scan_type: GREEN_SCAN_ANALYTICS_TYPE,
+        ...buildFailedCheckCounts(scanResult),
       })
 
       const existingSnapshots = normalizeScanSnapshots(readJsonStorage(SCAN_CACHE_KEY, {}))
@@ -407,6 +533,11 @@ function RepositoryDetailPage() {
       }
 
       if (error instanceof Error && error.name === UNAUTHORIZED_SCAN_ERROR) {
+        trackScanFailed({
+          ...repositoryAnalyticsParams,
+          scan_type: GREEN_SCAN_ANALYTICS_TYPE,
+          error_reason: 'unauthenticated',
+        })
         setAuthState({
           status: 'unauthenticated',
           user: null,
@@ -423,8 +554,18 @@ function RepositoryDetailPage() {
         completedAt: null,
         error: 'green_scan_failed',
       })
+      trackScanFailed({
+        ...repositoryAnalyticsParams,
+        scan_type: GREEN_SCAN_ANALYTICS_TYPE,
+        error_reason: error instanceof TypeError ? 'network_error' : 'request_failed',
+      })
     }
-  }, [hasValidRepositoryId, repositoriesUrl, repositoryId])
+  }, [
+    hasValidRepositoryId,
+    repositoriesUrl,
+    repositoryId,
+    repositoryState.repository,
+  ])
 
   useEffect(() => {
     void loadSession()
@@ -502,6 +643,32 @@ function RepositoryDetailPage() {
         connectedLogin: authState.user.login,
       }
     : {}
+
+  const handleCheckLearnMoreClick = useCallback(
+    (check) => {
+      const checkCategory = CODE_SAFETY_CHECK_IDS.has(check.id)
+        ? 'code_safety'
+        : 'repository_health'
+      const eventParams = {
+        ...buildRepositoryAnalyticsParams(repositoryState.repository),
+        check_id: check.id,
+        check_category: checkCategory,
+      }
+
+      if (checkCategory === 'code_safety' && !check.passed) {
+        trackWhatsWrongOpened(eventParams)
+        return
+      }
+
+      if (check.passed) {
+        trackLearnWhyThisMattersOpened(eventParams)
+        return
+      }
+
+      trackLearnMoreOpened(eventParams)
+    },
+    [repositoryState.repository],
+  )
 
   return (
     <div className="page repository-detail-page">
@@ -623,6 +790,7 @@ function RepositoryDetailPage() {
                   repositoryId={repositoryId}
                   checkId={check.id}
                   state={learnMoreState}
+                  onLearnMoreClick={() => handleCheckLearnMoreClick(check)}
                 />
               ))}
             </ul>
@@ -639,6 +807,7 @@ function RepositoryDetailPage() {
                     repositoryId={repositoryId}
                     checkId={check.id}
                     state={learnMoreState}
+                    onLearnMoreClick={() => handleCheckLearnMoreClick(check)}
                   />
                 ))}
               </ul>
@@ -658,6 +827,7 @@ function RepositoryDetailPage() {
                     repositoryId={repositoryId}
                     checkId={check.id}
                     state={learnMoreState}
+                    onLearnMoreClick={() => handleCheckLearnMoreClick(check)}
                   />
                 ))}
               </ul>
@@ -705,6 +875,7 @@ function RepositoryDetailPage() {
                           target="_blank"
                           rel="noopener noreferrer"
                           state={learnMoreState}
+                          onClick={() => handleCheckLearnMoreClick(check)}
                         >
                           Learn more ↗
                         </Link>

@@ -6,6 +6,14 @@ import {
   CODE_SAFETY_CHECK_IDS,
   resolveRepositoryCheckId,
 } from '../data/repositoryCheckGuides'
+import {
+  trackLearnMoreOpened,
+  trackLearnWhyThisMattersOpened,
+  trackScanCompleted,
+  trackScanFailed,
+  trackScanStarted,
+  trackWhatsWrongOpened,
+} from '../lib/analytics'
 import { buildBackendUrl, normalizeApiBaseUrl } from '../utils/apiUrl'
 import { normalizeRepositoryUrl } from '../utils/repositoryUrl'
 
@@ -37,6 +45,7 @@ const HIDDEN_REPOSITORY_HEALTH_CHECK_IDS = new Set([
 const PRIORITY_REPOSITORY_HEALTH_CHECK_IDS = new Set(['dependabot'])
 
 const SAFE_SCAN_EVIDENCE_CACHE_KEY = 'repoguard.safeScanEvidence.v1'
+const GREEN_SCAN_ANALYTICS_TYPE = 'green'
 
 function readJsonStorage(key, fallbackValue) {
   try {
@@ -275,6 +284,81 @@ function buildScannedRepositoryName(repository) {
   return 'Selected repository'
 }
 
+function normalizeRepositoryVisibility(repository) {
+  if (repository?.private === true || repository?.isPrivate === true) {
+    return 'private'
+  }
+
+  if (repository?.private === false || repository?.isPrivate === false) {
+    return 'public'
+  }
+
+  if (typeof repository?.visibility !== 'string') {
+    return null
+  }
+
+  const normalizedVisibility = repository.visibility.trim().toLowerCase()
+  return ['public', 'private', 'internal'].includes(normalizedVisibility)
+    ? normalizedVisibility
+    : null
+}
+
+function buildRepositoryAnalyticsParams(repository) {
+  const repositoryVisibility = normalizeRepositoryVisibility(repository)
+  const repositoryIsPublic = repositoryVisibility === 'public'
+  const repositoryOwner = normalizeBoundedString(repository?.owner, 120)
+  const repositoryName = normalizeBoundedString(repository?.name, 120)
+
+  return {
+    ...(repositoryIsPublic && repositoryOwner ? { repository_owner: repositoryOwner } : {}),
+    ...(repositoryIsPublic && repositoryName ? { repository_name: repositoryName } : {}),
+    ...(repositoryVisibility ? { repository_visibility: repositoryVisibility } : {}),
+  }
+}
+
+function buildScanFailedReason(statusCode) {
+  if (statusCode === 401) {
+    return 'unauthenticated'
+  }
+
+  if (statusCode >= 400) {
+    return 'request_failed'
+  }
+
+  return 'unknown'
+}
+
+function buildFailedCheckCounts(scanResult) {
+  const groups = Array.isArray(scanResult?.results) ? scanResult.results : []
+  let failedCheckCount = 0
+  let codeSafetyFailedCount = 0
+  let repositoryHealthFailedCount = 0
+
+  for (const group of groups) {
+    const items = Array.isArray(group?.items) ? group.items : []
+    for (const item of items) {
+      if (item?.status !== 'fail') {
+        continue
+      }
+
+      failedCheckCount += 1
+
+      if (group?.checklist === 'security_basics') {
+        codeSafetyFailedCount += 1
+        continue
+      }
+
+      repositoryHealthFailedCount += 1
+    }
+  }
+
+  return {
+    failed_check_count: failedCheckCount,
+    code_safety_failed_count: codeSafetyFailedCount,
+    repository_health_failed_count: repositoryHealthFailedCount,
+  }
+}
+
 function LandingPage() {
   const rawApiBaseUrl = import.meta.env.VITE_API_URL
   const apiBaseUrl = useMemo(
@@ -409,6 +493,12 @@ function LandingPage() {
       error: '',
     })
 
+    const startRepositoryParams = buildRepositoryAnalyticsParams(repositoryTarget)
+    trackScanStarted({
+      ...startRepositoryParams,
+      scan_type: GREEN_SCAN_ANALYTICS_TYPE,
+    })
+
     try {
       const response = await fetch(scansUrl, {
         method: 'POST',
@@ -435,6 +525,11 @@ function LandingPage() {
           result: null,
           error: message,
         })
+        trackScanFailed({
+          ...startRepositoryParams,
+          scan_type: GREEN_SCAN_ANALYTICS_TYPE,
+          error_reason: buildScanFailedReason(response.status),
+        })
         return
       }
 
@@ -444,11 +539,24 @@ function LandingPage() {
         result: payload,
         error: '',
       })
+      const completedRepositoryParams = buildRepositoryAnalyticsParams(
+        payload?.repository || repositoryTarget,
+      )
+      trackScanCompleted({
+        ...completedRepositoryParams,
+        scan_type: GREEN_SCAN_ANALYTICS_TYPE,
+        ...buildFailedCheckCounts(payload),
+      })
     } catch {
       setScanState({
         status: 'error',
         result: null,
         error: buildScanErrorMessage(500),
+      })
+      trackScanFailed({
+        ...startRepositoryParams,
+        scan_type: GREEN_SCAN_ANALYTICS_TYPE,
+        error_reason: 'network_error',
       })
     }
   }
@@ -471,6 +579,29 @@ function LandingPage() {
 
       return [...current, checklistId]
     })
+  }
+
+  const handleGuideLinkClick = ({ checkId, checkCategory, isPassed }) => {
+    const repositoryParams = buildRepositoryAnalyticsParams(
+      scannedRepository || repositoryTarget,
+    )
+    const eventParams = {
+      ...repositoryParams,
+      check_id: checkId,
+      check_category: checkCategory,
+    }
+
+    if (checkCategory === 'code_safety' && !isPassed) {
+      trackWhatsWrongOpened(eventParams)
+      return
+    }
+
+    if (isPassed) {
+      trackLearnWhyThisMattersOpened(eventParams)
+      return
+    }
+
+    trackLearnMoreOpened(eventParams)
   }
 
   return (
@@ -680,6 +811,15 @@ function LandingPage() {
                                 to={`/repositories/${routeRepositoryId}/checks/${checkId}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
+                                onClick={() =>
+                                  handleGuideLinkClick({
+                                    checkId,
+                                    checkCategory: isCodeSafetySignal
+                                      ? 'code_safety'
+                                      : 'repository_health',
+                                    isPassed,
+                                  })
+                                }
                                 state={{
                                   repositoryFullName,
                                   checklistId: group.checklist,

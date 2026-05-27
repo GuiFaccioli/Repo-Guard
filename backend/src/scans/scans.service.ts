@@ -124,6 +124,24 @@ const CODE_SAFETY_FILE_EXTENSIONS = new Set([
   '.ini',
   '.cfg',
 ]);
+const NON_PRODUCTION_CODE_SAFETY_SEGMENTS = new Set([
+  '__tests__',
+  'test',
+  'tests',
+  'fixtures',
+  'fixture',
+  'mocks',
+  'mock',
+  'docs',
+  'examples',
+  'example',
+]);
+const NON_PRODUCTION_CODE_SAFETY_SUFFIXES = [
+  '.spec.ts',
+  '.spec.js',
+  '.test.ts',
+  '.test.js',
+];
 
 const ISSUE_THRESHOLD = 25;
 const PULL_REQUEST_THRESHOLD = 10;
@@ -1266,6 +1284,26 @@ export class ScansService {
     return `${compactLine.slice(0, MAX_EVIDENCE_LINE_LENGTH - 3)}...`;
   }
 
+  private isTestOrExamplePath(path: string): boolean {
+    const normalizedPath = this.normalizePath(path).toLowerCase();
+    if (!normalizedPath) {
+      return false;
+    }
+
+    if (
+      NON_PRODUCTION_CODE_SAFETY_SUFFIXES.some((suffix) =>
+        normalizedPath.endsWith(suffix),
+      )
+    ) {
+      return true;
+    }
+
+    const pathSegments = normalizedPath.split('/').filter(Boolean);
+    return pathSegments.some((segment) =>
+      NON_PRODUCTION_CODE_SAFETY_SEGMENTS.has(segment),
+    );
+  }
+
   private isCodeSafetySamplePath(path: string): boolean {
     const normalizedPath = this.normalizePath(path);
     const extension = normalizedPath.includes('.')
@@ -1276,12 +1314,7 @@ export class ScansService {
       return false;
     }
 
-    const lowerPath = normalizedPath.toLowerCase();
-    if (
-      lowerPath.includes('/__tests__/') ||
-      lowerPath.includes('/test/') ||
-      lowerPath.includes('/tests/')
-    ) {
+    if (this.isTestOrExamplePath(normalizedPath)) {
       return false;
     }
 

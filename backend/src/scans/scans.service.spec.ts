@@ -376,4 +376,166 @@ describe('ScansService', () => {
       permissiveCorsItem?.codeContext?.some((line) => line.isFlaggedLine),
     ).toBe(true);
   });
+
+  it('should ignore test/example/docs fixtures in code safety checks while preserving production findings and .env detection', async () => {
+    const fileContents: Record<string, string> = {
+      'backend/src/main.ts': [
+        'import { NestFactory } from "@nestjs/core";',
+        'const app = await NestFactory.create(AppModule);',
+        'app.enableCors({ origin: "*" });',
+      ].join('\n'),
+      'backend/src/users.ts': [
+        'const userId = input.id;',
+        "const query = 'SELECT * FROM users WHERE id = ' + userId;",
+      ].join('\n'),
+      'backend/src/users.spec.ts': [
+        'describe("users", () => {',
+        "  const query = 'SELECT * FROM users WHERE id = ' + userId;",
+        '});',
+      ].join('\n'),
+      'backend/src/scans/safe-evidence-packet.spec.ts': [
+        'describe("fixtures", () => {',
+        "  const rawSecret = 'sk_live_FAKE_TEST_TOKEN_FOR_FIXTURE_ONLY_12345';",
+        '  app.enableCors({ origin: "*" });',
+        '});',
+      ].join('\n'),
+      'docs/examples/security-guide.ts': [
+        'export function risky() {',
+        '  return eval(payload);',
+        '}',
+      ].join('\n'),
+    };
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (
+        url.includes('https://api.github.com/repos/RepoOwner/RepoName') &&
+        !url.includes('/git/trees/')
+      ) {
+        return toJsonResponse({
+          default_branch: 'main',
+          pushed_at: '2026-05-26T00:00:00.000Z',
+        });
+      }
+
+      if (
+        url.includes(
+          'https://api.github.com/repos/RepoOwner/RepoName/git/trees/main?recursive=1',
+        )
+      ) {
+        return toJsonResponse({
+          tree: [
+            { path: 'backend/src/main.ts' },
+            { path: 'backend/src/users.ts' },
+            { path: 'backend/src/users.spec.ts' },
+            { path: 'backend/src/scans/safe-evidence-packet.spec.ts' },
+            { path: 'docs/examples/security-guide.ts' },
+            { path: '.env' },
+          ],
+        });
+      }
+
+      if (
+        url.includes('https://api.github.com/search/issues') &&
+        url.includes('is:issue')
+      ) {
+        return toJsonResponse({ total_count: 1 });
+      }
+
+      if (
+        url.includes('https://api.github.com/search/issues') &&
+        url.includes('is:pr')
+      ) {
+        return toJsonResponse({ total_count: 1 });
+      }
+
+      if (url.includes('https://raw.githubusercontent.com/')) {
+        const matchedEntry = Object.entries(fileContents).find(([path]) =>
+          url.includes(`/${path}`),
+        );
+        if (!matchedEntry) {
+          throw new Error(`Unexpected raw file URL in test: ${url}`);
+        }
+
+        return toTextResponse(matchedEntry[1]);
+      }
+
+      throw new Error(`Unexpected fetch URL in test: ${url}`);
+    });
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const response = await scansService.runScan(
+      'https://github.com/RepoOwner/RepoName',
+      ['security_basics'],
+    );
+
+    const securityBasics = response.results.find(
+      (result) => result.checklist === 'security_basics',
+    );
+    expect(securityBasics).toBeDefined();
+
+    const getItem = (label: string) =>
+      securityBasics?.items.find((item) => item.label === label);
+
+    expect(getItem('Permissive CORS configuration')?.status).toBe('fail');
+    expect(getItem('Permissive CORS configuration')?.filePath).toBe(
+      'backend/src/main.ts',
+    );
+    expect(getItem('SQL query built with string concatenation')?.status).toBe(
+      'fail',
+    );
+    expect(getItem('SQL query built with string concatenation')?.filePath).toBe(
+      'backend/src/users.ts',
+    );
+    expect(getItem('Possible hardcoded secret')?.status).toBe('pass');
+    expect(getItem('No eval usage detected')?.status).toBe('pass');
+    expect(getItem('Environment file committed')?.status).toBe('fail');
+
+    expect(response.evidencePacket).toBeDefined();
+    expect(response.aiReview).toBeDefined();
+
+    const failedFindingCheckIds = response.evidencePacket!.findings
+      .filter((finding) => finding.status === 'fail')
+      .map((finding) => finding.checkId);
+
+    expect(failedFindingCheckIds).toEqual(
+      expect.arrayContaining([
+        'permissive-cors',
+        'sql-string-concatenation',
+        'committed-env-file',
+      ]),
+    );
+    expect(failedFindingCheckIds).not.toContain('hardcoded-secret');
+    expect(failedFindingCheckIds).not.toContain('eval-usage');
+    expect(
+      response.evidencePacket!.findings
+        .filter((finding) => finding.status === 'fail')
+        .map((finding) => finding.filePath),
+    ).not.toEqual(
+      expect.arrayContaining([
+        'backend/src/users.spec.ts',
+        'backend/src/scans/safe-evidence-packet.spec.ts',
+        'docs/examples/security-guide.ts',
+      ]),
+    );
+
+    const envFinding = response.evidencePacket!.findings.find(
+      (finding) => finding.checkId === 'committed-env-file',
+    );
+    expect(envFinding?.status).toBe('fail');
+    expect(envFinding?.safeExcerpt).toBe(
+      '.env file detected. Content intentionally hidden.',
+    );
+
+    const aiReviewCheckIds = new Set(
+      response.aiReview!.topics.flatMap((topic) => topic.evidenceCheckIds),
+    );
+    expect(aiReviewCheckIds.has('hardcoded-secret')).toBe(false);
+    expect(aiReviewCheckIds.has('eval-usage')).toBe(false);
+    expect(aiReviewCheckIds.has('permissive-cors')).toBe(true);
+    expect(aiReviewCheckIds.has('sql-string-concatenation')).toBe(true);
+    expect(aiReviewCheckIds.has('committed-env-file')).toBe(true);
+  });
 });

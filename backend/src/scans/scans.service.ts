@@ -104,6 +104,15 @@ const CORS_HEADER_WILDCARD_PATTERN =
   /access-control-allow-origin[\s'"`:=,]*\*/i;
 const CORS_DEFAULT_USAGE_PATTERN =
   /app\.use\s*\(\s*cors\s*\(\s*\)\s*\)|app\.enableCors\s*\(\s*\)|\bcors\s*\(\s*\)\s*;?/i;
+const JWT_MEMBER_SIGN_CALL_PATTERN = /\b(?:jwt|jsonwebtoken)\.sign\s*\(/gi;
+const JWT_BARE_SIGN_CALL_PATTERN = /\bsign\s*\(/gi;
+const JWT_SIGN_IMPORT_PATTERN =
+  /import\s*\{\s*[^}]*\bsign\b[^}]*\}\s*from\s*['"]jsonwebtoken['"]|const\s*\{\s*[^}]*\bsign\b[^}]*\}\s*=\s*require\(\s*['"]jsonwebtoken['"]\s*\)/i;
+const JWT_EXPIRATION_OPTION_PATTERN = /\bexpiresIn\b/;
+const JWT_EXP_CLAIM_PATTERN = /\bexp\s*:/;
+const MAX_JWT_CALL_LENGTH = 420;
+const MAX_JWT_PAYLOAD_LOOKBACK = 500;
+const MAX_JWT_PAYLOAD_EXP_BLOCK = 240;
 
 const ENV_FILE_NAMES = new Set([
   '.env',
@@ -164,6 +173,8 @@ const MAX_POINTER_LENGTH = 72;
 
 const SECRET_LITERAL_MASK_PATTERN =
   /((?:api[_-]?key|token|secret|password|jwt[_-]?secret|client[_-]?secret)[\w$ \t]{0,32}[:=]\s*['"`])([^'"`\n]{6,})(['"`])/gi;
+const JWT_SIGN_SECRET_ARGUMENT_MASK_PATTERN =
+  /((?:\b(?:jwt|jsonwebtoken)\.sign|\bsign)\s*\(\s*[^,\n]{1,220},\s*['"`])([^'"`\n]{6,})(['"`])/gi;
 const HIGH_ENTROPY_TOKEN_MASK_PATTERN =
   /\b(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk_(?:live|test)_[A-Za-z0-9]{12,}|AKIA[0-9A-Z]{8,}|AIza[0-9A-Za-z_-]{12,})\b/g;
 
@@ -774,6 +785,31 @@ export class ScansService {
           },
     );
 
+    const jwtWithoutExpirationMatch =
+      this.findJwtWithoutExpirationMatch(codeSamples);
+    items.push(
+      jwtWithoutExpirationMatch
+        ? {
+            label: 'JWT token may be missing expiration',
+            status: 'fail',
+            details:
+              'A JWT token appears to be created without an expiration time.',
+            ...this.buildEvidenceItem(
+              jwtWithoutExpirationMatch,
+              target,
+              defaultBranch,
+              'jwt-without-expiration',
+              codeSamples,
+            ),
+          }
+        : {
+            label: 'JWT token expiration configured',
+            status: 'pass',
+            details:
+              'RepoGuard did not find obvious JWT signing without expiration in sampled files.',
+          },
+    );
+
     const wildcardCorsMatch = this.findPatternMatch(codeSamples, [
       CORS_WILDCARD_PATTERN,
       ENABLE_CORS_WILDCARD_PATTERN,
@@ -841,7 +877,12 @@ export class ScansService {
     match: PatternMatch | null,
     target: ParsedRepositoryTarget,
     defaultBranch: string,
-    checkId: 'hardcoded-secret' | 'sql-string-concatenation' | 'eval-usage' | 'permissive-cors',
+    checkId:
+      | 'hardcoded-secret'
+      | 'sql-string-concatenation'
+      | 'eval-usage'
+      | 'permissive-cors'
+      | 'jwt-without-expiration',
     codeSamples: Array<{ path: string; content: string }>,
   ): {
     filePath?: string;
@@ -1032,6 +1073,10 @@ export class ScansService {
       return 'This is the CORS configuration RepoGuard flagged for review.';
     }
 
+    if (checkId === 'jwt-without-expiration') {
+      return 'This JWT appears to be created without an expiration option.';
+    }
+
     return 'This is the pattern RepoGuard flagged.';
   }
 
@@ -1192,6 +1237,362 @@ export class ScansService {
     return null;
   }
 
+  private findJwtWithoutExpirationMatch(
+    samples: Array<{ path: string; content: string }>,
+  ): PatternMatch | null {
+    for (const sample of samples) {
+      const memberCallMatch = this.findJwtCallWithoutExpirationInSample(
+        sample.path,
+        sample.content,
+        JWT_MEMBER_SIGN_CALL_PATTERN,
+      );
+      if (memberCallMatch) {
+        return memberCallMatch;
+      }
+
+      if (!this.hasJwtNamedSignImport(sample.content)) {
+        continue;
+      }
+
+      const bareCallMatch = this.findJwtCallWithoutExpirationInSample(
+        sample.path,
+        sample.content,
+        JWT_BARE_SIGN_CALL_PATTERN,
+      );
+      if (bareCallMatch) {
+        return bareCallMatch;
+      }
+    }
+
+    return null;
+  }
+
+  private findJwtCallWithoutExpirationInSample(
+    samplePath: string,
+    sourceContent: string,
+    callPattern: RegExp,
+  ): PatternMatch | null {
+    const matcher = new RegExp(callPattern.source, callPattern.flags);
+    let match = matcher.exec(sourceContent);
+
+    while (match) {
+      const callStartIndex = typeof match.index === 'number' ? match.index : -1;
+      if (callStartIndex < 0) {
+        match = matcher.exec(sourceContent);
+        continue;
+      }
+
+      if (
+        callPattern.source === JWT_BARE_SIGN_CALL_PATTERN.source &&
+        callStartIndex > 0 &&
+        sourceContent[callStartIndex - 1] === '.'
+      ) {
+        match = matcher.exec(sourceContent);
+        continue;
+      }
+
+      const callExpression = this.extractBoundedCallExpression(
+        sourceContent,
+        callStartIndex,
+      );
+      if (!callExpression) {
+        match = matcher.exec(sourceContent);
+        continue;
+      }
+
+      const callArguments = this.extractTopLevelCallArguments(callExpression);
+      if (
+        !this.isJwtWithoutExpirationCall(
+          callArguments,
+          callExpression,
+          sourceContent,
+          callStartIndex,
+        )
+      ) {
+        match = matcher.exec(sourceContent);
+        continue;
+      }
+
+      const lineNumber = this.findLineNumberByIndex(sourceContent, callStartIndex);
+      const lineText = this.readLineByNumber(sourceContent, lineNumber);
+      const maskedLine = this.maskSensitiveLiterals(lineText);
+
+      return {
+        path: samplePath,
+        lineNumber,
+        codeExcerpt: this.clampEvidenceLine(maskedLine),
+      };
+    }
+
+    return null;
+  }
+
+  private isJwtWithoutExpirationCall(
+    callArguments: string[],
+    callExpression: string,
+    sourceContent: string,
+    callStartIndex: number,
+  ): boolean {
+    const normalizedArguments = callArguments
+      .map((argument) => argument.trim())
+      .filter(Boolean);
+    if (normalizedArguments.length < 2) {
+      return false;
+    }
+
+    if (
+      this.hasVisibleJwtExpiration(
+        normalizedArguments,
+        callExpression,
+        sourceContent,
+        callStartIndex,
+      )
+    ) {
+      return false;
+    }
+
+    return normalizedArguments.length === 2;
+  }
+
+  private hasVisibleJwtExpiration(
+    callArguments: string[],
+    callExpression: string,
+    sourceContent: string,
+    callStartIndex: number,
+  ): boolean {
+    if (JWT_EXPIRATION_OPTION_PATTERN.test(callExpression)) {
+      return true;
+    }
+
+    const payloadArgument = callArguments[0] || '';
+    if (this.hasInlinePayloadExpClaim(payloadArgument)) {
+      return true;
+    }
+
+    return this.hasNearbyPayloadExpClaim(
+      payloadArgument,
+      sourceContent,
+      callStartIndex,
+    );
+  }
+
+  private hasInlinePayloadExpClaim(payloadArgument: string): boolean {
+    const normalizedPayloadArgument = String(payloadArgument || '').trim();
+    if (!normalizedPayloadArgument.startsWith('{')) {
+      return false;
+    }
+
+    return JWT_EXP_CLAIM_PATTERN.test(normalizedPayloadArgument);
+  }
+
+  private hasNearbyPayloadExpClaim(
+    payloadArgument: string,
+    sourceContent: string,
+    callStartIndex: number,
+  ): boolean {
+    const payloadVariableName = String(payloadArgument || '').trim();
+    if (!/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(payloadVariableName)) {
+      return false;
+    }
+
+    const lookbackStart = Math.max(0, callStartIndex - MAX_JWT_PAYLOAD_LOOKBACK);
+    const lookbackSource = sourceContent.slice(lookbackStart, callStartIndex);
+    const escapedVariableName = payloadVariableName.replace(
+      /[.*+?^${}()|[\]\\]/g,
+      '\\$&',
+    );
+    const payloadExpPattern = new RegExp(
+      `(?:const|let|var)\\s+${escapedVariableName}\\s*=\\s*\\{[\\s\\S]{0,${MAX_JWT_PAYLOAD_EXP_BLOCK}}\\bexp\\s*:`,
+      'i',
+    );
+
+    return payloadExpPattern.test(lookbackSource);
+  }
+
+  private hasJwtNamedSignImport(sourceContent: string): boolean {
+    return JWT_SIGN_IMPORT_PATTERN.test(sourceContent);
+  }
+
+  private extractBoundedCallExpression(
+    sourceContent: string,
+    callStartIndex: number,
+  ): string | null {
+    const openParenthesisIndex = sourceContent.indexOf('(', callStartIndex);
+    if (openParenthesisIndex < 0) {
+      return null;
+    }
+
+    let parenthesisDepth = 0;
+    let quoteCharacter = '';
+    let isEscaping = false;
+    const maxSearchIndex = Math.min(
+      sourceContent.length,
+      openParenthesisIndex + MAX_JWT_CALL_LENGTH,
+    );
+
+    for (
+      let currentIndex = openParenthesisIndex;
+      currentIndex < maxSearchIndex;
+      currentIndex += 1
+    ) {
+      const currentCharacter = sourceContent[currentIndex];
+
+      if (quoteCharacter) {
+        if (isEscaping) {
+          isEscaping = false;
+          continue;
+        }
+
+        if (currentCharacter === '\\') {
+          isEscaping = true;
+          continue;
+        }
+
+        if (currentCharacter === quoteCharacter) {
+          quoteCharacter = '';
+        }
+        continue;
+      }
+
+      if (
+        currentCharacter === '"' ||
+        currentCharacter === '\'' ||
+        currentCharacter === '`'
+      ) {
+        quoteCharacter = currentCharacter;
+        continue;
+      }
+
+      if (currentCharacter === '(') {
+        parenthesisDepth += 1;
+        continue;
+      }
+
+      if (currentCharacter === ')') {
+        parenthesisDepth -= 1;
+        if (parenthesisDepth === 0) {
+          return sourceContent.slice(callStartIndex, currentIndex + 1);
+        }
+      }
+    }
+
+    return null;
+  }
+
+  private extractTopLevelCallArguments(callExpression: string): string[] {
+    const openParenthesisIndex = callExpression.indexOf('(');
+    const closeParenthesisIndex = callExpression.lastIndexOf(')');
+    if (
+      openParenthesisIndex < 0 ||
+      closeParenthesisIndex <= openParenthesisIndex
+    ) {
+      return [];
+    }
+
+    const argumentSource = callExpression.slice(
+      openParenthesisIndex + 1,
+      closeParenthesisIndex,
+    );
+    if (!argumentSource.trim()) {
+      return [];
+    }
+
+    const argumentsList: string[] = [];
+    let currentChunk = '';
+    let parenthesisDepth = 0;
+    let bracketDepth = 0;
+    let braceDepth = 0;
+    let quoteCharacter = '';
+    let isEscaping = false;
+
+    for (const currentCharacter of argumentSource) {
+      if (quoteCharacter) {
+        currentChunk += currentCharacter;
+
+        if (isEscaping) {
+          isEscaping = false;
+          continue;
+        }
+
+        if (currentCharacter === '\\') {
+          isEscaping = true;
+          continue;
+        }
+
+        if (currentCharacter === quoteCharacter) {
+          quoteCharacter = '';
+        }
+
+        continue;
+      }
+
+      if (
+        currentCharacter === '"' ||
+        currentCharacter === '\'' ||
+        currentCharacter === '`'
+      ) {
+        quoteCharacter = currentCharacter;
+        currentChunk += currentCharacter;
+        continue;
+      }
+
+      if (currentCharacter === '(') {
+        parenthesisDepth += 1;
+        currentChunk += currentCharacter;
+        continue;
+      }
+
+      if (currentCharacter === ')') {
+        parenthesisDepth = Math.max(0, parenthesisDepth - 1);
+        currentChunk += currentCharacter;
+        continue;
+      }
+
+      if (currentCharacter === '[') {
+        bracketDepth += 1;
+        currentChunk += currentCharacter;
+        continue;
+      }
+
+      if (currentCharacter === ']') {
+        bracketDepth = Math.max(0, bracketDepth - 1);
+        currentChunk += currentCharacter;
+        continue;
+      }
+
+      if (currentCharacter === '{') {
+        braceDepth += 1;
+        currentChunk += currentCharacter;
+        continue;
+      }
+
+      if (currentCharacter === '}') {
+        braceDepth = Math.max(0, braceDepth - 1);
+        currentChunk += currentCharacter;
+        continue;
+      }
+
+      if (
+        currentCharacter === ',' &&
+        parenthesisDepth === 0 &&
+        bracketDepth === 0 &&
+        braceDepth === 0
+      ) {
+        argumentsList.push(currentChunk.trim());
+        currentChunk = '';
+        continue;
+      }
+
+      currentChunk += currentCharacter;
+    }
+
+    if (currentChunk.trim()) {
+      argumentsList.push(currentChunk.trim());
+    }
+
+    return argumentsList;
+  }
+
   private findPatternMatch(
     samples: Array<{ path: string; content: string }>,
     patterns: RegExp[],
@@ -1282,8 +1683,13 @@ export class ScansService {
       (_, prefix: string, secretValue: string, suffix: string) =>
         `${prefix}${this.maskSecretValue(secretValue)}${suffix}`,
     );
+    const withMaskedJwtSecretArguments = withMaskedAssignments.replace(
+      JWT_SIGN_SECRET_ARGUMENT_MASK_PATTERN,
+      (_, prefix: string, secretValue: string, suffix: string) =>
+        `${prefix}${this.maskSecretValue(secretValue)}${suffix}`,
+    );
 
-    return withMaskedAssignments.replace(
+    return withMaskedJwtSecretArguments.replace(
       HIGH_ENTROPY_TOKEN_MASK_PATTERN,
       (token) => this.maskSecretValue(token),
     );

@@ -231,6 +231,63 @@ describe('buildSafeEvidencePacket', () => {
     expect(JSON.stringify(packet)).not.toContain(rawSecret);
   });
 
+  it('should map jwt-without-expiration and mask JWT secret-like argument values', () => {
+    const rawJwtSecret = 'TEST_SECRET_VALUE_SHOULD_BE_MASKED';
+    const results: ScanChecklistResult[] = [
+      {
+        checklist: 'security_basics',
+        title: 'Code safety signals',
+        items: [
+          {
+            label: 'JWT token may be missing expiration',
+            status: 'fail',
+            details: 'A JWT token appears to be created without an expiration time.',
+            filePath: 'backend/src/auth.ts',
+            lineNumber: 42,
+            codeExcerpt: `const token = jwt.sign(payload, "${rawJwtSecret}");`,
+            codeContext: [
+              { lineNumber: 40, content: 'const payload = { id: user.id };' },
+              {
+                lineNumber: 42,
+                content: `const token = jwt.sign(payload, "${rawJwtSecret}");`,
+                isFlaggedLine: true,
+              },
+            ],
+            flaggedLineNumber: 42,
+            flaggedLinePointer: '^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^',
+            flaggedLineExplanation:
+              'This JWT appears to be created without an expiration option.',
+          },
+        ],
+      },
+    ];
+
+    const packet = buildSafeEvidencePacket({
+      repository: githubRepository,
+      defaultBranch: 'main',
+      results,
+    });
+
+    expect(packet.findings[0]).toMatchObject({
+      checkId: 'jwt-without-expiration',
+      recommendationKey: 'add-jwt-expires-in',
+      lineNumber: 42,
+      flaggedLineNumber: 42,
+      flaggedLineExplanation:
+        'This JWT appears to be created without an expiration option.',
+    });
+    expect(packet.findings[0].safeExcerpt).toContain('TEST********');
+    expect(packet.findings[0].codeContext).toEqual([
+      { lineNumber: 40, content: 'const payload = { id: user.id };' },
+      {
+        lineNumber: 42,
+        content: 'const token = jwt.sign(payload, "TEST********");',
+        isFlaggedLine: true,
+      },
+    ]);
+    expect(JSON.stringify(packet)).not.toContain(rawJwtSecret);
+  });
+
   it('should never expose raw .env content in safe excerpts', () => {
     const results: ScanChecklistResult[] = [
       {

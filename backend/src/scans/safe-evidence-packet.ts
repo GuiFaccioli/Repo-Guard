@@ -38,6 +38,8 @@ const CHECK_ID_BY_LABEL_TOKEN: Record<string, string> = {
   sqlquerybuiltwithstringconcatenation: 'sql-string-concatenation',
   noevalusagedetected: 'eval-usage',
   permissivecorsconfiguration: 'permissive-cors',
+  jwttokenmaybemissingexpiration: 'jwt-without-expiration',
+  jwttokenexpirationconfigured: 'jwt-without-expiration',
 };
 
 const RECOMMENDATION_KEY_BY_CHECK_ID: Record<string, string> = {
@@ -52,10 +54,13 @@ const RECOMMENDATION_KEY_BY_CHECK_ID: Record<string, string> = {
   'sql-string-concatenation': 'use-parameterized-query',
   'eval-usage': 'avoid-dynamic-code-execution',
   'permissive-cors': 'explicit-cors-origins',
+  'jwt-without-expiration': 'add-jwt-expires-in',
 };
 
 const SECRET_LITERAL_PATTERN =
   /((?:api[_-]?key|token|secret|password|jwt[_-]?secret|client[_-]?secret)[\w$ \t]{0,32}[:=]\s*['"`])([^'"`\n]{6,})(['"`])/gi;
+const JWT_SIGN_SECRET_ARGUMENT_PATTERN =
+  /((?:\b(?:jwt|jsonwebtoken)\.sign|\bsign)\s*\(\s*[^,\n]{1,220},\s*['"`])([^'"`\n]{6,})(['"`])/gi;
 const HIGH_ENTROPY_TOKEN_PATTERN =
   /\b(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|sk_(?:live|test)_[A-Za-z0-9]{12,}|AKIA[0-9A-Z]{8,}|AIza[0-9A-Za-z_-]{12,})\b/g;
 
@@ -328,8 +333,13 @@ function maskSensitiveLiterals(value: string): string {
     (_, prefix: string, secretValue: string, suffix: string) =>
       `${prefix}${maskToken(secretValue)}${suffix}`,
   );
+  const withMaskedJwtSecretArguments = withMaskedAssignments.replace(
+    JWT_SIGN_SECRET_ARGUMENT_PATTERN,
+    (_, prefix: string, secretValue: string, suffix: string) =>
+      `${prefix}${maskToken(secretValue)}${suffix}`,
+  );
 
-  return withMaskedAssignments.replace(
+  return withMaskedJwtSecretArguments.replace(
     HIGH_ENTROPY_TOKEN_PATTERN,
     (token) => maskToken(token),
   );

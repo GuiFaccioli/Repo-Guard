@@ -93,6 +93,20 @@ const CHECK_TOPIC_TEMPLATES: Record<string, AiReviewTopicTemplate> = {
       'Add tests for expected behavior after the refactor.',
     ],
   },
+  'jwt-without-expiration': {
+    id: 'review-jwt-expiration',
+    title: 'Review JWT expiration',
+    priority: 'review before production',
+    explanation:
+      'RepoGuard found a JWT creation pattern that may be missing an explicit expiration.',
+    recommendedDirection:
+      'Set an explicit token lifetime with expiresIn or a clear exp claim near token creation.',
+    nextSteps: [
+      'Review JWT sign calls and confirm expected token lifetime.',
+      'Add expiresIn where token creation currently omits expiration.',
+      'Keep JWT secrets in environment variables and avoid hardcoded values.',
+    ],
+  },
   dependabot: {
     id: 'add-dependabot',
     title: 'Add dependency update automation',

@@ -632,6 +632,363 @@ describe('ScansService', () => {
     expect(JSON.stringify(response.aiReview)).not.toContain('hardcoded-secret');
   });
 
+  it('should flag jwt.sign without expiration and include safe evidence plus ai review topic', async () => {
+    const rawJwtSecret = 'TEST_SECRET_VALUE_SHOULD_BE_MASKED';
+    const mockFileContent = [
+      'import jwt from "jsonwebtoken";',
+      'const payload = { id: user.id };',
+      `const token = jwt.sign(payload, "${rawJwtSecret}");`,
+      'return token;',
+    ].join('\n');
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (
+        url.includes('https://api.github.com/repos/RepoOwner/RepoName') &&
+        !url.includes('/git/trees/')
+      ) {
+        return toJsonResponse({
+          default_branch: 'main',
+          pushed_at: '2026-05-26T00:00:00.000Z',
+        });
+      }
+
+      if (
+        url.includes(
+          'https://api.github.com/repos/RepoOwner/RepoName/git/trees/main?recursive=1',
+        )
+      ) {
+        return toJsonResponse({
+          tree: [{ path: 'backend/src/auth.ts' }],
+        });
+      }
+
+      if (
+        url.includes('https://api.github.com/search/issues') &&
+        url.includes('is:issue')
+      ) {
+        return toJsonResponse({ total_count: 0 });
+      }
+
+      if (
+        url.includes('https://api.github.com/search/issues') &&
+        url.includes('is:pr')
+      ) {
+        return toJsonResponse({ total_count: 0 });
+      }
+
+      if (url.includes('https://raw.githubusercontent.com/')) {
+        return toTextResponse(mockFileContent);
+      }
+
+      throw new Error(`Unexpected fetch URL in test: ${url}`);
+    });
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const response = await scansService.runScan(
+      'https://github.com/RepoOwner/RepoName',
+      ['security_basics'],
+    );
+    const securityBasics = response.results.find(
+      (result) => result.checklist === 'security_basics',
+    );
+    const jwtItem = securityBasics?.items.find(
+      (item) => item.label === 'JWT token may be missing expiration',
+    );
+
+    expect(jwtItem?.status).toBe('fail');
+    expect(jwtItem?.details).toBe(
+      'A JWT token appears to be created without an expiration time.',
+    );
+    expect(jwtItem?.filePath).toBe('backend/src/auth.ts');
+    expect(jwtItem?.lineNumber).toBe(3);
+    expect(jwtItem?.codeExcerpt).toContain('TEST********');
+    expect(jwtItem?.flaggedLineNumber).toBe(3);
+    expect(jwtItem?.flaggedLinePointer).toContain('^');
+    expect(jwtItem?.flaggedLineExplanation).toBe(
+      'This JWT appears to be created without an expiration option.',
+    );
+    expect(jwtItem?.codeContext?.length).toBeGreaterThan(0);
+    expect(jwtItem?.codeContext?.length).toBeLessThanOrEqual(12);
+    expect(jwtItem?.codeContext?.some((line) => line.isFlaggedLine)).toBe(true);
+
+    const jwtFinding = response.evidencePacket!.findings.find(
+      (finding) =>
+        finding.checkId === 'jwt-without-expiration' &&
+        finding.status === 'fail',
+    );
+    expect(jwtFinding).toMatchObject({
+      checkId: 'jwt-without-expiration',
+      status: 'fail',
+      filePath: 'backend/src/auth.ts',
+      lineNumber: 3,
+      flaggedLineNumber: 3,
+      flaggedLineExplanation:
+        'This JWT appears to be created without an expiration option.',
+    });
+    expect(jwtFinding?.codeContext?.length).toBeGreaterThan(0);
+
+    expect(
+      response.aiReview!.topics.some((topic) =>
+        topic.evidenceCheckIds.includes('jwt-without-expiration'),
+      ),
+    ).toBe(true);
+
+    const serializedResponse = JSON.stringify(response);
+    expect(serializedResponse).not.toContain(rawJwtSecret);
+  });
+
+  it('should pass JWT expiration check when expiresIn is provided', async () => {
+    const mockFileContent = [
+      'import jwt from "jsonwebtoken";',
+      'const payload = { id: user.id };',
+      'const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "1h" });',
+      'return token;',
+    ].join('\n');
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (
+        url.includes('https://api.github.com/repos/RepoOwner/RepoName') &&
+        !url.includes('/git/trees/')
+      ) {
+        return toJsonResponse({
+          default_branch: 'main',
+          pushed_at: '2026-05-26T00:00:00.000Z',
+        });
+      }
+
+      if (
+        url.includes(
+          'https://api.github.com/repos/RepoOwner/RepoName/git/trees/main?recursive=1',
+        )
+      ) {
+        return toJsonResponse({
+          tree: [{ path: 'backend/src/auth.ts' }],
+        });
+      }
+
+      if (
+        url.includes('https://api.github.com/search/issues') &&
+        url.includes('is:issue')
+      ) {
+        return toJsonResponse({ total_count: 0 });
+      }
+
+      if (
+        url.includes('https://api.github.com/search/issues') &&
+        url.includes('is:pr')
+      ) {
+        return toJsonResponse({ total_count: 0 });
+      }
+
+      if (url.includes('https://raw.githubusercontent.com/')) {
+        return toTextResponse(mockFileContent);
+      }
+
+      throw new Error(`Unexpected fetch URL in test: ${url}`);
+    });
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const response = await scansService.runScan(
+      'https://github.com/RepoOwner/RepoName',
+      ['security_basics'],
+    );
+    const securityBasics = response.results.find(
+      (result) => result.checklist === 'security_basics',
+    );
+    const jwtPassItem = securityBasics?.items.find(
+      (item) => item.label === 'JWT token expiration configured',
+    );
+
+    expect(jwtPassItem?.status).toBe('pass');
+    expect(jwtPassItem?.details).toBe(
+      'RepoGuard did not find obvious JWT signing without expiration in sampled files.',
+    );
+    expect(
+      response.evidencePacket!.findings.some(
+        (finding) =>
+          finding.checkId === 'jwt-without-expiration' &&
+          finding.status === 'fail',
+      ),
+    ).toBe(false);
+    expect(
+      response.aiReview!.topics.some((topic) =>
+        topic.evidenceCheckIds.includes('jwt-without-expiration'),
+      ),
+    ).toBe(false);
+  });
+
+  it('should flag jsonwebtoken.sign without expiration', async () => {
+    const rawJwtSecret = 'FAKE_TEST_SECRET_VALUE_123456';
+    const mockFileContent = [
+      'const jsonwebtoken = require("jsonwebtoken");',
+      'const payload = { id: user.id };',
+      `const token = jsonwebtoken.sign(payload, "${rawJwtSecret}");`,
+      'return token;',
+    ].join('\n');
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (
+        url.includes('https://api.github.com/repos/RepoOwner/RepoName') &&
+        !url.includes('/git/trees/')
+      ) {
+        return toJsonResponse({
+          default_branch: 'main',
+          pushed_at: '2026-05-26T00:00:00.000Z',
+        });
+      }
+
+      if (
+        url.includes(
+          'https://api.github.com/repos/RepoOwner/RepoName/git/trees/main?recursive=1',
+        )
+      ) {
+        return toJsonResponse({
+          tree: [{ path: 'backend/src/auth.ts' }],
+        });
+      }
+
+      if (
+        url.includes('https://api.github.com/search/issues') &&
+        url.includes('is:issue')
+      ) {
+        return toJsonResponse({ total_count: 0 });
+      }
+
+      if (
+        url.includes('https://api.github.com/search/issues') &&
+        url.includes('is:pr')
+      ) {
+        return toJsonResponse({ total_count: 0 });
+      }
+
+      if (url.includes('https://raw.githubusercontent.com/')) {
+        return toTextResponse(mockFileContent);
+      }
+
+      throw new Error(`Unexpected fetch URL in test: ${url}`);
+    });
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const response = await scansService.runScan(
+      'https://github.com/RepoOwner/RepoName',
+      ['security_basics'],
+    );
+    const securityBasics = response.results.find(
+      (result) => result.checklist === 'security_basics',
+    );
+    const jwtItem = securityBasics?.items.find(
+      (item) => item.label === 'JWT token may be missing expiration',
+    );
+
+    expect(jwtItem?.status).toBe('fail');
+    expect(jwtItem?.filePath).toBe('backend/src/auth.ts');
+    expect(jwtItem?.lineNumber).toBe(3);
+    expect(jwtItem?.codeExcerpt).toContain('FAKE********');
+    expect(
+      response.evidencePacket!.findings.some(
+        (finding) =>
+          finding.checkId === 'jwt-without-expiration' &&
+          finding.status === 'fail',
+      ),
+    ).toBe(true);
+    expect(
+      response.aiReview!.topics.some((topic) =>
+        topic.evidenceCheckIds.includes('jwt-without-expiration'),
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(response)).not.toContain(rawJwtSecret);
+  });
+
+  it('should ignore JWT patterns in .spec.ts files', async () => {
+    const mockFileContent = [
+      'import jwt from "jsonwebtoken";',
+      'describe("auth", () => {',
+      '  const payload = { id: 1 };',
+      '  const token = jwt.sign(payload, "NOT_A_REAL_TOKEN_FOR_TEST_ONLY");',
+      '});',
+    ].join('\n');
+
+    const fetchMock = jest.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+
+      if (
+        url.includes('https://api.github.com/repos/RepoOwner/RepoName') &&
+        !url.includes('/git/trees/')
+      ) {
+        return toJsonResponse({
+          default_branch: 'main',
+          pushed_at: '2026-05-26T00:00:00.000Z',
+        });
+      }
+
+      if (
+        url.includes(
+          'https://api.github.com/repos/RepoOwner/RepoName/git/trees/main?recursive=1',
+        )
+      ) {
+        return toJsonResponse({
+          tree: [{ path: 'backend/src/auth.spec.ts' }],
+        });
+      }
+
+      if (
+        url.includes('https://api.github.com/search/issues') &&
+        url.includes('is:issue')
+      ) {
+        return toJsonResponse({ total_count: 0 });
+      }
+
+      if (
+        url.includes('https://api.github.com/search/issues') &&
+        url.includes('is:pr')
+      ) {
+        return toJsonResponse({ total_count: 0 });
+      }
+
+      if (url.includes('https://raw.githubusercontent.com/')) {
+        return toTextResponse(mockFileContent);
+      }
+
+      throw new Error(`Unexpected fetch URL in test: ${url}`);
+    });
+
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const response = await scansService.runScan(
+      'https://github.com/RepoOwner/RepoName',
+      ['security_basics'],
+    );
+    const securityBasics = response.results.find(
+      (result) => result.checklist === 'security_basics',
+    );
+    const jwtPassItem = securityBasics?.items.find(
+      (item) => item.label === 'JWT token expiration configured',
+    );
+
+    expect(jwtPassItem?.status).toBe('pass');
+    expect(
+      response.evidencePacket!.findings.some(
+        (finding) =>
+          finding.checkId === 'jwt-without-expiration' &&
+          finding.status === 'fail',
+      ),
+    ).toBe(false);
+    expect(
+      response.aiReview!.topics.some((topic) =>
+        topic.evidenceCheckIds.includes('jwt-without-expiration'),
+      ),
+    ).toBe(false);
+  });
+
   it('should still detect real-looking hardcoded apiKey values', async () => {
     const mockFileContent = [
       'const config = {',

@@ -51,6 +51,13 @@ describe('AiReviewService', () => {
           summary: 'A SQL query appears to concatenate dynamic data.',
         },
         {
+          checkId: 'jwt-without-expiration',
+          category: 'code-safety',
+          status: 'fail',
+          title: 'JWT token may be missing expiration',
+          summary: 'A JWT token appears to be created without an expiration time.',
+        },
+        {
           checkId: 'dependabot',
           category: 'repository-health',
           status: 'pass',
@@ -61,13 +68,18 @@ describe('AiReviewService', () => {
     });
 
     expect(report.summary).toBe(
-      'RepoGuard found 3 code safety signals that should be reviewed.',
+      'RepoGuard found 4 code safety signals that should be reviewed.',
     );
     expect(report.topics).toEqual([
       expect.objectContaining({
         id: 'review-cors-configuration',
         priority: 'review before production',
         evidenceCheckIds: ['permissive-cors'],
+      }),
+      expect.objectContaining({
+        id: 'review-jwt-expiration',
+        priority: 'review before production',
+        evidenceCheckIds: ['jwt-without-expiration'],
       }),
       expect.objectContaining({
         id: 'review-sql-query-construction',

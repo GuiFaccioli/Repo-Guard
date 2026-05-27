@@ -373,6 +373,47 @@ const ADDITIONAL_REPOSITORY_CHECK_GUIDES = [
       'Safe example: app.use(cors({ origin: ["https://app.example.com"] }));',
     ],
   },
+  {
+    id: 'jwt-without-expiration',
+    label: 'JWT token may be missing expiration',
+    shortDescription: 'JWT signing call may not define an explicit expiration time.',
+    fixTitle: 'Configure JWT expiration when signing tokens',
+    whatRepoGuardFound:
+      'RepoGuard found a JWT creation pattern that may need review.',
+    whatItIs:
+      'JSON Web Tokens (JWTs) are signed tokens often used for authentication and session flows.',
+    whyChecked:
+      'RepoGuard checks JWT signing patterns because tokens without visible expiration can remain valid longer than intended.',
+    whyNeedsAttention:
+      'A JWT without an explicit expiration may stay valid beyond the expected session lifetime.',
+    whyMatters:
+      'For authentication flows, tokens usually need a clear lifetime so access windows remain predictable and reviewable.',
+    saferDirection:
+      'Add an expiresIn option (or a clear exp claim) when creating JWTs.',
+    saferExample:
+      'const token = jwt.sign(payload, process.env.JWT_SECRET, {\n  expiresIn: "1h",\n});',
+    currentPattern: 'const token = jwt.sign(payload, process.env.JWT_SECRET);',
+    recommendedPattern:
+      'const token = jwt.sign(payload, process.env.JWT_SECRET, {\n  expiresIn: "1h",\n});',
+    whatIsWrongHere:
+      'A JWT without an expiration may remain valid longer than intended. Tokens should usually have a clear lifetime, such as 15 minutes or 1 hour.',
+    officialDocs: [
+      {
+        label: 'npm: jsonwebtoken documentation',
+        url: 'https://www.npmjs.com/package/jsonwebtoken',
+      },
+      {
+        label: 'Auth0: JSON Web Tokens',
+        url: 'https://auth0.com/docs/secure/tokens/json-web-tokens',
+      },
+    ],
+    howToFix: [
+      'Add an expiresIn option when creating JWTs.',
+      'Choose a lifetime based on session and security needs.',
+      'Keep JWT secrets in environment variables.',
+      'Safe example: const token = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "1h" });',
+    ],
+  },
 ]
 
 export const CODE_SAFETY_CHECK_IDS = new Set([
@@ -381,6 +422,7 @@ export const CODE_SAFETY_CHECK_IDS = new Set([
   'sql-string-concatenation',
   'eval-usage',
   'permissive-cors',
+  'jwt-without-expiration',
 ])
 
 const checkAliasMap = {
@@ -421,6 +463,8 @@ const checkAliasMap = {
   evalusageinjsts: 'eval-usage',
   permissivecorsconfiguration: 'permissive-cors',
   corsconfigurationmayneedreview: 'permissive-cors',
+  jwttokenmaybemissingexpiration: 'jwt-without-expiration',
+  jwttokenexpirationconfigured: 'jwt-without-expiration',
   secretfiles: 'committed-env-file',
   hardcodedsecretslegacy: 'hardcoded-secret',
   sqlconcatenation: 'sql-string-concatenation',

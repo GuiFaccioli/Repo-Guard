@@ -4,7 +4,6 @@ import Button from '../components/Button'
 import Card from '../components/Card'
 import {
   CODE_SAFETY_CHECK_IDS,
-  buildOrderedRepositoryChecks,
   resolveRepositoryCheckId,
 } from '../data/repositoryCheckGuides'
 import {
@@ -19,13 +18,13 @@ import { buildBackendUrl, normalizeApiBaseUrl } from '../utils/apiUrl'
 
 const SCAN_CACHE_KEY = 'repoguard.scanResults.v1'
 const REPOSITORY_CACHE_KEY = 'repoguard.repositories.v1'
-const GREEN_SCAN_TYPE = 'green'
+const GENERAL_SCAN_TYPE = 'general'
 const UNAUTHORIZED_SCAN_ERROR = 'unauthenticated_scan_request'
-const STATUS_OK_LABEL = '\u2713 OK'
-const STATUS_MISSING_LABEL = '\u2715 Missing'
-const STATUS_OK_PREFIX = '\u2713'
-const STATUS_MISSING_PREFIX = '\u2715'
-const GREEN_SCAN_ANALYTICS_TYPE = 'green'
+const STATUS_LABELS = {
+  green: '\u2713 Green',
+  yellow: '\u25B3 Yellow',
+  red: '\u2715 Red',
+}
 const activeScanRequests = new Map()
 
 const initialAuthState = {
@@ -150,19 +149,21 @@ function buildRepositoryAnalyticsParams(repository) {
 }
 
 function buildFailedCheckCounts(scanResult) {
-  const scanChecks = Array.isArray(scanResult?.checks) ? scanResult.checks : []
+  const didacticChecks = Array.isArray(scanResult?.didacticChecks)
+    ? scanResult.didacticChecks
+    : []
   let failedCheckCount = 0
   let codeSafetyFailedCount = 0
   let repositoryHealthFailedCount = 0
 
-  for (const check of scanChecks) {
-    if (check?.passed === true) {
+  for (const check of didacticChecks) {
+    if (check?.status === 'green') {
       continue
     }
 
     failedCheckCount += 1
 
-    const checkId = resolveRepositoryCheckId(check)
+    const checkId = resolveRepositoryCheckId({ key: check?.checkId, label: check?.label })
     if (checkId && CODE_SAFETY_CHECK_IDS.has(checkId)) {
       codeSafetyFailedCount += 1
       continue
@@ -193,32 +194,8 @@ function RepositoryCheckLearnMoreLink({ repositoryId, checkId, state, onClick })
   )
 }
 
-function RepositoryCheckRow({
-  prefix,
-  label,
-  repositoryId,
-  checkId,
-  state,
-  onLearnMoreClick,
-}) {
-  return (
-    <li className="report-line-row">
-      <span className="report-line-copy">
-        {prefix ? <span className="report-line-prefix">{prefix}</span> : null}
-        <span className="report-line-label">{label}</span>
-      </span>
-      <RepositoryCheckLearnMoreLink
-        repositoryId={repositoryId}
-        checkId={checkId}
-        state={state}
-        onClick={onLearnMoreClick}
-      />
-    </li>
-  )
-}
-
-async function requestGreenScan(repositoriesUrl, repositoryId) {
-  const requestKey = `${repositoriesUrl}|${repositoryId}|${GREEN_SCAN_TYPE}`
+async function requestGeneralScan(repositoriesUrl, repositoryId) {
+  const requestKey = `${repositoriesUrl}|${repositoryId}|${GENERAL_SCAN_TYPE}`
   const activeRequest = activeScanRequests.get(requestKey)
   if (activeRequest) {
     return activeRequest
@@ -232,9 +209,7 @@ async function requestGreenScan(repositoriesUrl, repositoryId) {
         Accept: 'application/json',
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        scanType: GREEN_SCAN_TYPE,
-      }),
+      body: JSON.stringify({}),
     })
 
     if (response.status === 401) {
@@ -450,7 +425,7 @@ function RepositoryDetailPage() {
     }
   }, [hasValidRepositoryId, repositoriesUrl, repositoryId])
 
-  const runGreenScan = useCallback(async () => {
+  const runGeneralScan = useCallback(async () => {
     const repositoryAnalyticsParams = buildRepositoryAnalyticsParams(
       repositoryState.repository,
     )
@@ -464,7 +439,7 @@ function RepositoryDetailPage() {
       })
       trackScanFailed({
         ...repositoryAnalyticsParams,
-        scan_type: GREEN_SCAN_ANALYTICS_TYPE,
+        scan_type: GENERAL_SCAN_TYPE,
         error_reason: 'invalid_repository_id',
       })
       return
@@ -479,7 +454,7 @@ function RepositoryDetailPage() {
       })
       trackScanFailed({
         ...repositoryAnalyticsParams,
-        scan_type: GREEN_SCAN_ANALYTICS_TYPE,
+        scan_type: GENERAL_SCAN_TYPE,
         error_reason: 'missing_api_configuration',
       })
       return
@@ -496,11 +471,11 @@ function RepositoryDetailPage() {
     })
     trackScanStarted({
       ...repositoryAnalyticsParams,
-      scan_type: GREEN_SCAN_ANALYTICS_TYPE,
+      scan_type: GENERAL_SCAN_TYPE,
     })
 
     try {
-      const scanResult = await requestGreenScan(repositoriesUrl, repositoryId)
+      const scanResult = await requestGeneralScan(repositoriesUrl, repositoryId)
       if (latestScanRequestRef.current !== requestId) {
         return
       }
@@ -514,7 +489,7 @@ function RepositoryDetailPage() {
       })
       trackScanCompleted({
         ...repositoryAnalyticsParams,
-        scan_type: GREEN_SCAN_ANALYTICS_TYPE,
+        scan_type: GENERAL_SCAN_TYPE,
         ...buildFailedCheckCounts(scanResult),
       })
 
@@ -535,7 +510,7 @@ function RepositoryDetailPage() {
       if (error instanceof Error && error.name === UNAUTHORIZED_SCAN_ERROR) {
         trackScanFailed({
           ...repositoryAnalyticsParams,
-          scan_type: GREEN_SCAN_ANALYTICS_TYPE,
+          scan_type: GENERAL_SCAN_TYPE,
           error_reason: 'unauthenticated',
         })
         setAuthState({
@@ -552,11 +527,11 @@ function RepositoryDetailPage() {
         status: 'error',
         result: null,
         completedAt: null,
-        error: 'green_scan_failed',
+        error: 'general_scan_failed',
       })
       trackScanFailed({
         ...repositoryAnalyticsParams,
-        scan_type: GREEN_SCAN_ANALYTICS_TYPE,
+        scan_type: GENERAL_SCAN_TYPE,
         error_reason: error instanceof TypeError ? 'network_error' : 'request_failed',
       })
     }
@@ -568,25 +543,30 @@ function RepositoryDetailPage() {
   ])
 
   useEffect(() => {
-    void loadSession()
+    const timerId = window.setTimeout(() => {
+      void loadSession()
+    }, 0)
+
+    return () => window.clearTimeout(timerId)
   }, [loadSession])
 
   useEffect(() => {
     if (authState.status !== 'authenticated') {
-      setRepositoryState(initialRepositoryState)
-      setScanState(initialScanState)
       autoScanRepositoryRef.current = null
       latestScanRequestRef.current += 1
       return
     }
 
-    void resolveRepository()
+    const timerId = window.setTimeout(() => {
+      void resolveRepository()
+    }, 0)
+
+    return () => window.clearTimeout(timerId)
   }, [authState.status, resolveRepository])
 
   useEffect(() => {
     autoScanRepositoryRef.current = null
     latestScanRequestRef.current += 1
-    setScanState(initialScanState)
   }, [repositoryId])
 
   useEffect(() => {
@@ -604,8 +584,8 @@ function RepositoryDetailPage() {
     }
 
     autoScanRepositoryRef.current = routeRepositoryKey
-    void runGreenScan()
-  }, [authState.status, repositoryState.status, repositoryId, runGreenScan])
+    void runGeneralScan()
+  }, [authState.status, repositoryState.status, repositoryId, runGeneralScan])
 
   const isLoadingSession = authState.status === 'loading'
   const isMissingConfig = authState.status === 'missing_config'
@@ -624,18 +604,11 @@ function RepositoryDetailPage() {
 
   const activeResult = scanState.result
   const hasScanResult = scanState.status === 'success' && Boolean(activeResult)
-  const activeChecks = Array.isArray(activeResult?.checks) ? activeResult.checks : []
-
-  const orderedChecks = hasScanResult ? buildOrderedRepositoryChecks(activeChecks) : []
-  const correctlyConfiguredChecks = orderedChecks.filter((check) => check.passed)
-  const needsAttentionChecks = orderedChecks.filter((check) => !check.passed)
-
-  const improveItems = []
-  for (const check of needsAttentionChecks) {
-    if (!improveItems.includes(check.fixTitle)) {
-      improveItems.push(check.fixTitle)
-    }
-  }
+  const didacticChecks = Array.isArray(activeResult?.didacticChecks)
+    ? activeResult.didacticChecks
+    : []
+  const greenChecks = didacticChecks.filter((check) => check.status === 'green')
+  const attentionChecks = didacticChecks.filter((check) => check.status !== 'green')
 
   const learnMoreState = hasRepository
     ? {
@@ -646,21 +619,24 @@ function RepositoryDetailPage() {
 
   const handleCheckLearnMoreClick = useCallback(
     (check) => {
-      const checkCategory = CODE_SAFETY_CHECK_IDS.has(check.id)
-        ? 'code_safety'
-        : 'repository_health'
+      const resolvedCheckId =
+        resolveRepositoryCheckId({ key: check.checkId, label: check.label }) || check.checkId
+      const checkCategory =
+        resolvedCheckId && CODE_SAFETY_CHECK_IDS.has(resolvedCheckId)
+          ? 'code_safety'
+          : 'repository_health'
       const eventParams = {
         ...buildRepositoryAnalyticsParams(repositoryState.repository),
-        check_id: check.id,
+        check_id: check.checkId,
         check_category: checkCategory,
       }
 
-      if (checkCategory === 'code_safety' && !check.passed) {
+      if (checkCategory === 'code_safety' && check.status !== 'green') {
         trackWhatsWrongOpened(eventParams)
         return
       }
 
-      if (check.passed) {
+      if (check.status === 'green') {
         trackLearnWhyThisMattersOpened(eventParams)
         return
       }
@@ -768,12 +744,12 @@ function RepositoryDetailPage() {
         <Card className="scan-state-card">
           <h2 className="scan-state-title">Scan could not be completed</h2>
           <p className="state-note scan-state-message">
-            RepoGuard could not finish the Green Scan for this repository.
+            RepoGuard could not finish the repository scan for this project.
           </p>
           <p className="state-note scan-state-message">You can try again.</p>
           <div className="hero-actions scan-state-actions">
-            <Button type="button" onClick={() => void runGreenScan()}>
-              Retry Green Scan
+            <Button type="button" onClick={() => void runGeneralScan()}>
+              Retry scan
             </Button>
           </div>
         </Card>
@@ -781,122 +757,77 @@ function RepositoryDetailPage() {
 
       {hasRepository && hasScanResult ? (
         <>
-          <Card title="What RepoGuard inspected">
+          <Card title="Scan summary">
+            <p className="scan-check-message">
+              This report shows one contextual scan with didactic checks and clear next actions.
+            </p>
             <ul className="report-line-list">
-              {orderedChecks.map((check) => (
-                <RepositoryCheckRow
-                  key={`inspected-${check.id}`}
-                  label={check.label}
-                  repositoryId={repositoryId}
-                  checkId={check.id}
-                  state={learnMoreState}
-                  onLearnMoreClick={() => handleCheckLearnMoreClick(check)}
-                />
-              ))}
+              <li>Green: {greenChecks.length}</li>
+              <li>Needs attention (Yellow/Red): {attentionChecks.length}</li>
             </ul>
           </Card>
 
-          <Card title="What is correctly configured">
-            {correctlyConfiguredChecks.length ? (
-              <ul className="report-line-list report-line-list-status-ok">
-                {correctlyConfiguredChecks.map((check) => (
-                  <RepositoryCheckRow
-                    key={`ok-${check.id}`}
-                    prefix={STATUS_OK_PREFIX}
-                    label={check.label}
-                    repositoryId={repositoryId}
-                    checkId={check.id}
-                    state={learnMoreState}
-                    onLearnMoreClick={() => handleCheckLearnMoreClick(check)}
-                  />
-                ))}
-              </ul>
-            ) : (
-              <p className="scan-check-message">No checks are currently marked as configured.</p>
-            )}
-          </Card>
+          <Card title="Didactic checks">
+            {didacticChecks.length ? (
+              <div className="report-line-list">
+                {didacticChecks.map((check) => {
+                  const resolvedCheckId =
+                    resolveRepositoryCheckId({ key: check.checkId, label: check.label }) ||
+                    'readme'
 
-          <Card title="What needs attention">
-            {needsAttentionChecks.length ? (
-              <ul className="report-line-list report-line-list-status-missing">
-                {needsAttentionChecks.map((check) => (
-                  <RepositoryCheckRow
-                    key={`missing-${check.id}`}
-                    prefix={STATUS_MISSING_PREFIX}
-                    label={check.label}
-                    repositoryId={repositoryId}
-                    checkId={check.id}
-                    state={learnMoreState}
-                    onLearnMoreClick={() => handleCheckLearnMoreClick(check)}
-                  />
-                ))}
-              </ul>
+                  return (
+                    <div key={`didactic-${check.checkId}`} className="report-line-row">
+                      <div className="report-line-copy">
+                        <p className="report-line-label">
+                          {check.label} — {STATUS_LABELS[check.status] || check.status}
+                        </p>
+                        <p className="scan-check-message">
+                          <strong>What was checked:</strong> {check.whatChecked}
+                        </p>
+                        <p className="scan-check-message">
+                          <strong>Why it matters:</strong> {check.whyItMatters}
+                        </p>
+                        <p className="scan-check-message">
+                          <strong>What RepoGuard found:</strong> {check.whatFound}
+                        </p>
+                        <p className="scan-check-message">
+                          <strong>Suggested action:</strong> {check.suggestedAction}
+                        </p>
+                        <p className="scan-check-message">
+                          <strong>Confidence:</strong> {check.confidence}
+                        </p>
+                        {check.uncertaintyNote ? (
+                          <p className="scan-check-message">
+                            <strong>Uncertainty:</strong> {check.uncertaintyNote}
+                          </p>
+                        ) : null}
+                        <p className="scan-check-message">
+                          <strong>Sources:</strong>
+                        </p>
+                        <ul className="report-line-list">
+                          {(check.sources || []).map((source) => (
+                            <li key={`${check.checkId}-${source.url}`}>
+                              <a href={source.url} target="_blank" rel="noopener noreferrer">
+                                {source.title}
+                              </a>{' '}
+                              ({source.sourceType})
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <RepositoryCheckLearnMoreLink
+                        repositoryId={repositoryId}
+                        checkId={resolvedCheckId}
+                        state={learnMoreState}
+                        onClick={() => handleCheckLearnMoreClick(check)}
+                      />
+                    </div>
+                  )
+                })}
+              </div>
             ) : (
-              <p className="scan-check-message">No checks need attention right now.</p>
+              <p className="scan-check-message">No didactic checks were returned by this scan.</p>
             )}
-          </Card>
-
-          <Card title="How to improve">
-            {improveItems.length ? (
-              <ul className="report-line-list">
-                {improveItems.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            ) : (
-              <p className="scan-check-message">
-                No improvements required for the current Green Scan baseline.
-              </p>
-            )}
-          </Card>
-
-          <Card title="Detailed checks">
-            <div className="repository-table-wrap">
-              <table className="repository-table repository-check-table">
-                <thead>
-                  <tr>
-                    <th>Check</th>
-                    <th>Status</th>
-                    <th>Learn more</th>
-                    <th>How to fix</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {orderedChecks.map((check) => (
-                    <tr key={`detail-${check.id}`}>
-                      <td>{check.label}</td>
-                      <td className={check.passed ? 'check-status-ok' : 'check-status-missing'}>
-                        {check.passed ? STATUS_OK_LABEL : STATUS_MISSING_LABEL}
-                      </td>
-                      <td>
-                        <Link
-                          className="table-action-link"
-                          to={`/repositories/${repositoryId}/checks/${check.id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          state={learnMoreState}
-                          onClick={() => handleCheckLearnMoreClick(check)}
-                        >
-                          Learn more ↗
-                        </Link>
-                      </td>
-                      <td>
-                        <Link
-                          className="table-action-link"
-                          to={{
-                            pathname: `/repositories/${repositoryId}/checks/${check.id}`,
-                            hash: '#how-to-fix',
-                          }}
-                          state={learnMoreState}
-                        >
-                          {check.passed ? '[View]' : '[Fix]'}
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
           </Card>
         </>
       ) : null}

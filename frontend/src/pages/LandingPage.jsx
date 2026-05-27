@@ -4,6 +4,7 @@ import Button from '../components/Button'
 import Card from '../components/Card'
 import {
   CODE_SAFETY_CHECK_IDS,
+  getRepositoryCheckGuideById,
   resolveRepositoryCheckId,
 } from '../data/repositoryCheckGuides'
 import {
@@ -45,7 +46,11 @@ const HIDDEN_REPOSITORY_HEALTH_CHECK_IDS = new Set([
 const PRIORITY_REPOSITORY_HEALTH_CHECK_IDS = new Set(['dependabot'])
 
 const SAFE_SCAN_EVIDENCE_CACHE_KEY = 'repoguard.safeScanEvidence.v1'
-const GREEN_SCAN_ANALYTICS_TYPE = 'green'
+const GENERAL_SCAN_ANALYTICS_TYPE = 'general'
+const DIDACTIC_STATUS_LABEL = {
+  pass: '✓ Green',
+  fail: '✕ Red',
+}
 
 function readJsonStorage(key, fallbackValue) {
   try {
@@ -249,6 +254,33 @@ function buildCodeSafetyEvidenceByCheckId(scanResult) {
   }
 
   return codeSafetyEvidence
+}
+
+function buildDidacticSources(checkId) {
+  const guide = getRepositoryCheckGuideById(checkId)
+  const docs = Array.isArray(guide?.officialDocs) ? guide.officialDocs : []
+
+  if (!docs.length) {
+    return []
+  }
+
+  return docs.slice(0, 3).map((doc) => ({
+    title: doc.label,
+    url: doc.url,
+    sourceType: /owasp|mdn/i.test(doc.label) ? 'community' : 'official',
+  }))
+}
+
+function buildDidacticCopy(checkId, item) {
+  const guide = getRepositoryCheckGuideById(checkId)
+  const action = Array.isArray(guide?.howToFix) && guide.howToFix.length ? guide.howToFix[0] : 'Review this check and apply the recommended fix.'
+
+  return {
+    whatChecked: `RepoGuard checked "${item?.label || checkId}" for this repository.`,
+    whyItMatters: guide?.whyMatters || guide?.whyChecked || 'This signal helps keep repository quality and security understandable.',
+    whatFound: typeof item?.details === 'string' ? item.details : 'No additional details were returned.',
+    suggestedAction: action,
+  }
 }
 
 function buildGuideRouteRepositoryId(repository) {
@@ -496,7 +528,7 @@ function LandingPage() {
     const startRepositoryParams = buildRepositoryAnalyticsParams(repositoryTarget)
     trackScanStarted({
       ...startRepositoryParams,
-      scan_type: GREEN_SCAN_ANALYTICS_TYPE,
+      scan_type: GENERAL_SCAN_ANALYTICS_TYPE,
     })
 
     try {
@@ -527,7 +559,7 @@ function LandingPage() {
         })
         trackScanFailed({
           ...startRepositoryParams,
-          scan_type: GREEN_SCAN_ANALYTICS_TYPE,
+          scan_type: GENERAL_SCAN_ANALYTICS_TYPE,
           error_reason: buildScanFailedReason(response.status),
         })
         return
@@ -544,7 +576,7 @@ function LandingPage() {
       )
       trackScanCompleted({
         ...completedRepositoryParams,
-        scan_type: GREEN_SCAN_ANALYTICS_TYPE,
+        scan_type: GENERAL_SCAN_ANALYTICS_TYPE,
         ...buildFailedCheckCounts(payload),
       })
     } catch {
@@ -555,7 +587,7 @@ function LandingPage() {
       })
       trackScanFailed({
         ...startRepositoryParams,
-        scan_type: GREEN_SCAN_ANALYTICS_TYPE,
+        scan_type: GENERAL_SCAN_ANALYTICS_TYPE,
         error_reason: 'network_error',
       })
     }
@@ -777,6 +809,8 @@ function LandingPage() {
                           !isCodeSafetySignal &&
                           (PRIORITY_REPOSITORY_HEALTH_CHECK_IDS.has(checkId) ||
                             /dependabot|dependency automation/i.test(String(item.label || '')))
+                        const didacticCopy = buildDidacticCopy(checkId, item)
+                        const didacticSources = buildDidacticSources(checkId)
                         const learnMoreLabel = isCodeSafetySignal
                           ? isPassed
                             ? 'Learn why this matters \u2197'
@@ -796,6 +830,7 @@ function LandingPage() {
                                   {item.status === 'pass' ? '\u2713' : '\u2715'}
                                 </span>
                                 <span className="scan-result-label">{item.label}</span>
+                                <span className="scan-result-priority">{DIDACTIC_STATUS_LABEL[item.status] || item.status}</span>
                                 {isPriorityCheck ? (
                                   <span className="scan-result-priority">Priority</span>
                                 ) : null}
@@ -805,7 +840,22 @@ function LandingPage() {
                                   File: <span className="scan-result-file-path">{displayFilePath}</span>
                                 </p>
                               ) : null}
-                              <p className="scan-result-details">{item.details}</p>
+                              <p className="scan-result-details"><strong>What was checked:</strong> {didacticCopy.whatChecked}</p>
+                              <p className="scan-result-details"><strong>Why it matters:</strong> {didacticCopy.whyItMatters}</p>
+                              <p className="scan-result-details"><strong>What RepoGuard found:</strong> {didacticCopy.whatFound}</p>
+                              <p className="scan-result-details"><strong>Suggested action:</strong> {didacticCopy.suggestedAction}</p>
+                              {didacticSources.length ? (
+                                <ul className="report-line-list">
+                                  {didacticSources.map((source) => (
+                                    <li key={`${checkId}-${source.url}`}>
+                                      <a href={source.url} target="_blank" rel="noopener noreferrer">
+                                        {source.title}
+                                      </a>{' '}
+                                      ({source.sourceType})
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : null}
                               <Link
                                 className="scan-result-learn-more"
                                 to={`/repositories/${routeRepositoryId}/checks/${checkId}`}

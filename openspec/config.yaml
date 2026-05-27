@@ -1,0 +1,66 @@
+strict_tdd: true
+context: |
+  backend is a Node.js/TypeScript, Node.js/TypeScript ESM, React project.
+  Detected markers: backend/package.json, backend/tsconfig.json, backend/npm package manager, frontend/package.json, frontend/npm package manager.
+  Package managers: npm.
+  Additional evidence: Test-like files detected (5); examples: backend\src\app.controller.spec.ts, backend\src\scans\ai-review.service.spec.ts, backend\src\scans\safe-evidence-packet.spec.ts, backend\src\scans\scans.service.spec.ts, backend\test\app.e2e-spec.ts.
+  Primary test command: cd backend && npm test.
+  Unit tests: Jest (cd backend && npm test).
+  Integration tests: Supertest (cd backend && npm test).
+  E2E tests: Playwright (cd backend && npm run test:e2e).
+rules:
+  proposal:
+    require_problem_statement: true
+  spec:
+    require_acceptance_criteria: true
+  design:
+    require_tradeoffs: true
+  tasks:
+    protect_review_workload: true
+  apply:
+    test_command: "cd backend && npm test"
+  verify:
+    test_command: "cd backend && npm test"
+testing:
+  detected: "2026-05-27"
+  runner:
+    command: "cd backend && npm test"
+    framework: "Jest"
+  layers:
+    unit: "Jest"
+    integration: "Supertest"
+    e2e: "Playwright"
+  commands:
+    unit:
+      - scope: "backend"
+        command: "cd backend && npm test"
+        framework: "Jest"
+    integration:
+      - scope: "backend"
+        command: "cd backend && npm test"
+        framework: "Supertest"
+    e2e:
+      - scope: "backend"
+        command: "cd backend && npm run test:e2e"
+        framework: "Playwright"
+  coverage:
+    command: ""
+    commands:
+      []
+quality:
+  lint: "cd backend && npm run lint"
+  lint_commands:
+    - scope: "backend"
+      command: "cd backend && npm run lint"
+      framework: "linter"
+    - scope: "frontend"
+      command: "cd frontend && npm run lint"
+      framework: "linter"
+  typecheck: ""
+  typecheck_commands:
+    []
+  format: "cd backend && npm run format"
+  format_commands:
+    - scope: "backend"
+      command: "cd backend && npm run format"
+      framework: "formatter"

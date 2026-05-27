@@ -1,40 +1,39 @@
 # RepoGuard Backend
 
-NestJS backend foundation for GitHub OAuth and session handling.
+NestJS backend for OAuth, repository listing, and scanning.
 
 ## Run locally
-1. Install dependencies:
-   - `npm install`
-2. Create local environment file:
-   - copy `.env.example` to `.env`
-3. Start in development mode:
-   - `npm run start:dev`
 
-Default local URL:
-- `http://localhost:3001`
+1. `npm install`
+2. Configure `.env` from `.env.example`
+3. `npm run start:dev`
 
-## Port 3001 already in use (Windows)
-If `npm run start:dev` fails with `EADDRINUSE`, port `3001` is busy.
-
-1. Find the process:
-   - `netstat -ano | findstr :3001`
-2. Stop it by PID:
-   - `taskkill /PID <PID> /F`
-
-Alternative:
-- Stop the process from the original terminal with `Ctrl + C`.
-- Or temporarily change `PORT` in `.env`.
-
-If you change `PORT`, also update `GITHUB_CALLBACK_URL` to the same backend port and make the GitHub OAuth App callback match exactly.
+Default local URL: `http://localhost:3001`
 
 ## Implemented routes
+
 - `GET /health`
 - `GET /auth/github/start`
 - `GET /auth/github/callback`
 - `GET /auth/me`
 - `POST /auth/logout`
+- `GET /repositories`
+- `POST /repositories/:id/scans` (single `general` scan)
+- `POST /scans` (URL-based deterministic scan service)
+
+## Repository scan contract (OAuth route)
+
+`POST /repositories/:id/scans` returns:
+- `scanType: "general"`
+- `summary` with `green/yellow/red` counts + `highestSeverity`
+- `context` profile
+- raw `checks`
+- didactic `didacticChecks`
+- `recommendations`
 
 ## Security notes
-- Keep GitHub client credentials on backend only.
-- Do not commit real `.env` files.
+
+- GitHub tokens remain server-side in session.
 - Session cookie is `httpOnly`.
+- Private repositories are currently blocked in OAuth repository scan flow.
+- Never commit `.env` or credentials.

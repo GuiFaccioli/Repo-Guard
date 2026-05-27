@@ -1,95 +1,57 @@
 # RepoGuard
 
-RepoGuard is a full-stack project for repository health and defensive security review.
+RepoGuard is a full-stack app for repository health and defensive security diagnostics.
 
-Today, RepoGuard already supports authenticated GitHub repository selection, automated repository scanning, safe evidence generation, and deterministic AI-review-shaped guidance.
+## Current Product State (as implemented)
 
-## Live Demo
-- https://repo-guard-beta.vercel.app/
+RepoGuard currently has **two scan flows**:
 
-## How RepoGuard Works Today
+1. **Authenticated repository scan (GitHub OAuth)**
+   - User authenticates with GitHub.
+   - User selects one public repository at `/repositories`.
+   - `/repositories/:id` runs a **single `general` scan** automatically.
+   - Output is didactic per check (`green` / `yellow` / `red`) with context, confidence, uncertainty notes, and sources.
 
-### 1. Authentication and Session
-- User starts GitHub OAuth via backend.
-- Backend stores GitHub access token server-side in session.
-- Frontend validates session with `/auth/me`.
+2. **URL-based scan (no OAuth session)**
+   - User can submit a repository URL on `/`.
+   - Backend endpoint `POST /scans` supports GitHub/GitLab/Bitbucket URL parsing.
+   - Returns deterministic checklist results plus safe evidence packet and deterministic AI-review-shaped guidance.
 
-### 2. Repository Selection Flow
-- Frontend loads authenticated public repositories from backend (`GET /repositories`).
-- User selects one repository at `/repositories`.
-- Repository detail route (`/repositories/:id`) automatically triggers a Green Scan.
+## Key Backend Behavior
 
-### 3. Scan and Report Flow
-RepoGuard currently has two scan entry points:
-
-- OAuth repository scan (GitHub only): `POST /repositories/:id/scans`
-  - Supports `green`, `yellow`, and `red` scan types.
-  - Returns score, checks, summary, and recommendations.
-
-- URL-based scan service: `POST /scans`
-  - Supports GitHub, GitLab, and Bitbucket repository URLs.
-  - Supports checklist-based scan output (`good_practices`, `security_basics`).
-  - Returns deterministic results plus:
-    - `evidencePacket` (safe evidence contract)
-    - `aiReview` (deterministic AI-review-shaped report, no provider call)
-
-### 4. Safe Evidence and AI Review (Current Backend State)
-- Safe Evidence Packet is implemented.
-- Secret-like values are masked in safe excerpts.
-- AI Review service abstraction is implemented and deterministic.
-- No real AI provider call is used.
-- No MCP integration is implemented yet.
-
-## Checks Available Today
-
-Green/Good Practices baseline includes items such as:
-- README
-- `.gitignore`
-- `package.json`
-- Dependabot
-- CI automation
-- LICENSE
-- Recent activity
-- Open issues / open pull requests
-
-Code safety checks include items such as:
-- hardcoded secret patterns
-- committed `.env` files
-- SQL string concatenation patterns
-- eval/new Function usage
-- permissive CORS patterns
+- `GET /repositories` lists authenticated **public** GitHub repositories.
+- `POST /repositories/:id/scans` now runs one scan type only: `general`.
+- Global numeric score was removed from repository scan response.
+- Repository scan response includes:
+  - `summary` (`green`, `yellow`, `red`, `highestSeverity`)
+  - `context`
+  - `checks`
+  - `didacticChecks`
+  - `recommendations`
 
 ## Tech Stack
-Frontend:
-- React
-- Vite
-- React Router
 
-Backend:
-- Node.js
-- NestJS
+- Frontend: React + Vite + React Router
+- Backend: NestJS (Node.js)
+- Auth: GitHub OAuth + server-side session
+- Integrations: GitHub REST API
+- Analytics: GA4 frontend instrumentation
+- Data direction: PostgreSQL + Prisma (not yet implemented for scan persistence)
 
-Database direction:
-- PostgreSQL
-- Prisma
+## Security Model
 
-Integrations:
-- GitHub OAuth
-- GitHub REST API
-- GA4 direction (event instrumentation still evolving)
-
-## Current Scope and Limitations
-- Repository persistence/history is not implemented yet.
-- AI review is deterministic placeholder logic only (no model/provider yet).
-- MCP layer is not implemented yet.
-- Product and architecture are evolving in incremental phases.
-
-## Project Status and Roadmap
-- Progress and milestones: [docs/project-status.md](docs/project-status.md)
-- AI review architecture and phase status: [docs/ai-review/AI_REVIEW_ARCHITECTURE.md](docs/ai-review/AI_REVIEW_ARCHITECTURE.md)
+- GitHub token stays server-side in session.
+- Session cookie is `httpOnly`.
+- Safe evidence masks sensitive literals.
+- Analytics helper allowlists event names/params and blocks sensitive payloads.
 
 ## Local Development
-- Setup, environment variables, OAuth local notes, and troubleshooting: [docs/development-notes.md](docs/development-notes.md)
 
-## AI-Assisted Development
-This repository uses [AGENTS.md](AGENTS.md) and specialized instructions under [`agents/`](agents/) to keep AI-assisted work consistent and safe.
+- Setup and env notes: `docs/development-notes.md`
+- OAuth setup: `docs/github-oauth.md`
+- Status and milestones: `docs/project-status.md`
+- GA4 events: `docs/analytics/GA4_EVENTS.md`
+
+## AI-assisted Development
+
+Project workflow and guardrails are defined in `AGENTS.md`.

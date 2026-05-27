@@ -1,29 +1,38 @@
 # RepoGuard Frontend
 
-This directory contains the React + Vite frontend for RepoGuard.
+React + Vite frontend for RepoGuard.
 
-## Scope of this stage
-- GitHub-first onboarding and routing/page placeholders.
-- No real repository analysis yet.
-- OAuth is backend-driven and still in foundation stage.
+## Current routes
 
-## Available routes
-- `/` (GitHub-first onboarding entry)
-- `/auth/callback`
-- `/repositories`
-- `/repositories/:id`
+- `/` — landing with URL-based scan flow and onboarding entry
+- `/auth/callback` — OAuth callback handling
+- `/repositories` — authenticated repository selector
+- `/repositories/:id` — automatic `general` scan report
+- `/repositories/:id/checks/:checkId` — didactic check guide/details
+
+## Current report behavior (`/repositories/:id`)
+
+- Scan starts automatically after repository resolution.
+- UI prioritizes `didacticChecks` from backend.
+- Per-check output includes:
+  - green/yellow/red status
+  - what was checked
+  - why it matters
+  - what was found
+  - suggested action
+  - confidence / uncertainty
+  - sources
+- No global score rendering.
 
 ## Local development
-1. Install dependencies:
-   - `npm install`
-2. Start dev server:
-   - `npm run dev`
-3. Build production bundle:
-   - `npm run build`
 
-## Environment variables
-Use `frontend/.env.example` as reference:
-- `VITE_API_URL` (local default: `http://localhost:3001`)
-- `VITE_GA_MEASUREMENT_ID`
+1. `npm install`
+2. `npm run dev`
+3. `npm run build`
 
-If backend port changes locally, update `VITE_API_URL` to the same backend URL.
+## Environment
+
+- `VITE_API_URL` (required)
+- `VITE_GA_MEASUREMENT_ID` (optional)
+
+If backend URL/port changes, update `VITE_API_URL` accordingly.

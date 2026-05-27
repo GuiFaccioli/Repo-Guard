@@ -111,9 +111,52 @@ export interface AiReviewReport {
   safety: AiReviewSafetyMetadata;
 }
 
+export type DidacticStatus = 'green' | 'yellow' | 'red';
+export type DidacticConfidence = 'high' | 'medium' | 'low';
+export type RepositoryContextKind =
+  | 'fullstack-app'
+  | 'library-sdk'
+  | 'scientific'
+  | 'automation'
+  | 'unknown';
+
+export interface SourceReference {
+  title: string;
+  url: string;
+  sourceType: 'official' | 'community' | 'specification';
+}
+
+export interface DidacticCheckResult {
+  checkId: string;
+  label: string;
+  status: DidacticStatus;
+  confidence: DidacticConfidence;
+  whatChecked: string;
+  whyItMatters: string;
+  whatFound: string;
+  suggestedAction: string;
+  sources: SourceReference[];
+  uncertaintyNote?: string;
+}
+
+export interface RepositoryContextProfile {
+  primary: RepositoryContextKind;
+  secondary: RepositoryContextKind[];
+  confidence: DidacticConfidence;
+  signals: string[];
+}
+
 export interface ScanRepositoryResponse {
   repository: ParsedRepositoryTarget;
+  scanType: 'general';
   selectedChecklists: ScanChecklistId[];
+  summary: {
+    green: number;
+    yellow: number;
+    red: number;
+  };
+  context: RepositoryContextProfile;
+  didacticChecks: DidacticCheckResult[];
   results: ScanChecklistResult[];
   evidencePacket?: SafeEvidencePacket;
   aiReview?: AiReviewReport;

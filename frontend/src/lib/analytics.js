@@ -222,7 +222,7 @@ export function trackPageView(path, title) {
 export function trackScanStarted(params = {}) {
   emitEvent('scan_started', {
     scan_status: 'started',
-    scan_type: 'green',
+    scan_type: 'general',
     ...params,
   })
 }
@@ -230,7 +230,7 @@ export function trackScanStarted(params = {}) {
 export function trackScanCompleted(params = {}) {
   emitEvent('scan_completed', {
     scan_status: 'completed',
-    scan_type: 'green',
+    scan_type: 'general',
     ...params,
   })
 }
@@ -238,7 +238,7 @@ export function trackScanCompleted(params = {}) {
 export function trackScanFailed(params = {}) {
   emitEvent('scan_failed', {
     scan_status: 'failed',
-    scan_type: 'green',
+    scan_type: 'general',
     error_reason: 'unknown',
     ...params,
   })

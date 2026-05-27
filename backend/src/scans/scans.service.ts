@@ -6,7 +6,9 @@ import {
   UnprocessableEntityException,
 } from '@nestjs/common';
 import {
+  DidacticCheckResult,
   ParsedRepositoryTarget,
+  RepositoryContextProfile,
   SafeEvidenceCodeContextLine,
   SafeEvidencePacket,
   ScanChecklistId,
@@ -14,6 +16,7 @@ import {
   ScanChecklistResult,
   ScanProvider,
   ScanRepositoryResponse,
+  SourceReference,
 } from './scans.types';
 import { AiReviewService } from './ai-review.service';
 import { buildSafeEvidencePacket } from './safe-evidence-packet';
@@ -187,7 +190,10 @@ export class ScansService {
     checklistsInput: unknown,
   ): Promise<ScanRepositoryResponse> {
     try {
-      const request = this.normalizeRequest(repositoryUrlInput, checklistsInput);
+      const request = this.normalizeRequest(
+        repositoryUrlInput,
+        checklistsInput,
+      );
       const target = this.parseRepositoryUrl(request.repositoryUrl);
       const repositorySnapshot = await this.fetchRepositorySnapshot(target);
 
@@ -221,10 +227,22 @@ export class ScansService {
       });
       const aiReview =
         this.aiReviewService.generateFromEvidencePacket(evidencePacket);
+      const context = this.buildContextProfile(target, selectedResults);
+      const didacticChecks = this.buildDidacticChecks(evidencePacket, aiReview);
 
       return {
         repository: target,
+        scanType: 'general',
         selectedChecklists: request.checklists,
+        summary: {
+          green: didacticChecks.filter((check) => check.status === 'green')
+            .length,
+          yellow: didacticChecks.filter((check) => check.status === 'yellow')
+            .length,
+          red: didacticChecks.filter((check) => check.status === 'red').length,
+        },
+        context,
+        didacticChecks,
         results: selectedResults,
         evidencePacket,
         aiReview,
@@ -242,6 +260,132 @@ export class ScansService {
         'Could not complete repository scan.',
       );
     }
+  }
+
+  private buildContextProfile(
+    target: ParsedRepositoryTarget,
+    results: ScanChecklistResult[],
+  ): RepositoryContextProfile {
+    const normalizedPaths = results
+      .flatMap((result) => result.items || [])
+      .map((item) => String(item.filePath || '').toLowerCase())
+      .filter(Boolean);
+
+    const hasScientificSignals = normalizedPaths.some(
+      (path) =>
+        path.includes('/paper') ||
+        path.includes('/dataset') ||
+        path.endsWith('.tex') ||
+        path.includes('supplementary'),
+    );
+    const hasAutomationSignals = normalizedPaths.some(
+      (path) =>
+        path.includes('.github/workflows') ||
+        path.includes('pipeline') ||
+        path.includes('terraform'),
+    );
+
+    const primary: RepositoryContextProfile['primary'] = hasScientificSignals
+      ? 'scientific'
+      : hasAutomationSignals
+        ? 'automation'
+        : 'unknown';
+
+    return {
+      primary,
+      secondary: [],
+      confidence: 'medium',
+      signals: [`provider:${target.provider}`],
+    };
+  }
+
+  private buildDidacticChecks(
+    evidencePacket: SafeEvidencePacket,
+    aiReview: import('./scans.types').AiReviewReport,
+  ): DidacticCheckResult[] {
+    const topicByCheckId = new Map<
+      string,
+      import('./scans.types').AiReviewTopic
+    >();
+
+    for (const topic of aiReview.topics || []) {
+      for (const checkId of topic.evidenceCheckIds || []) {
+        topicByCheckId.set(checkId, topic);
+      }
+    }
+
+    const sourcesByCheckId: Record<string, SourceReference[]> = {
+      'hardcoded-secret': [
+        {
+          title: 'GitHub Docs: Secret scanning',
+          url: 'https://docs.github.com/en/code-security/secret-scanning/about-secret-scanning',
+          sourceType: 'official',
+        },
+      ],
+      'committed-env-file': [
+        {
+          title: 'OWASP: Secrets Management Cheat Sheet',
+          url: 'https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html',
+          sourceType: 'community',
+        },
+      ],
+      'sql-string-concatenation': [
+        {
+          title: 'OWASP: SQL Injection Prevention Cheat Sheet',
+          url: 'https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html',
+          sourceType: 'community',
+        },
+      ],
+      'eval-usage': [
+        {
+          title: 'MDN: eval()',
+          url: 'https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/eval',
+          sourceType: 'official',
+        },
+      ],
+      'permissive-cors': [
+        {
+          title: 'MDN: CORS',
+          url: 'https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS',
+          sourceType: 'official',
+        },
+      ],
+    };
+
+    return (evidencePacket.findings || []).map((finding) => {
+      const topic = topicByCheckId.get(finding.checkId);
+      const status: DidacticCheckResult['status'] =
+        finding.status === 'pass' ? 'green' : 'red';
+      const confidence: DidacticCheckResult['confidence'] =
+        finding.status === 'pass' ? 'medium' : 'high';
+
+      return {
+        checkId: finding.checkId,
+        label: finding.title,
+        status,
+        confidence,
+        whatChecked: `RepoGuard checked "${finding.title}" for this repository.`,
+        whyItMatters:
+          topic?.explanation ||
+          'This check helps keep repository quality and security signals understandable.',
+        whatFound: finding.summary,
+        suggestedAction:
+          topic?.recommendedDirection ||
+          topic?.nextSteps?.[0] ||
+          'Review this item and apply the recommended fix guidance.',
+        sources: sourcesByCheckId[finding.checkId] || [
+          {
+            title: 'OWASP Cheat Sheet Series',
+            url: 'https://cheatsheetseries.owasp.org/',
+            sourceType: 'community',
+          },
+        ],
+        uncertaintyNote:
+          finding.checkId === 'unknown-check'
+            ? 'This check has limited context; validate manually.'
+            : undefined,
+      };
+    });
   }
 
   private normalizeRequest(
@@ -328,7 +472,9 @@ export class ScansService {
         );
       }
 
-      const name = this.stripGitSuffix(pathnameSegments[pathnameSegments.length - 1]);
+      const name = this.stripGitSuffix(
+        pathnameSegments[pathnameSegments.length - 1],
+      );
       const owner = pathnameSegments.slice(0, -1).join('/');
 
       if (!owner || !name) {
@@ -451,9 +597,8 @@ export class ScansService {
       },
     );
 
-    const defaultBranch = this.readString(repositoryResponse, [
-      'default_branch',
-    ]) || 'main';
+    const defaultBranch =
+      this.readString(repositoryResponse, ['default_branch']) || 'main';
     const pushedAt = this.readString(repositoryResponse, ['pushed_at']);
     const treePaths = await this.fetchGithubTreePaths(
       target.owner,
@@ -496,9 +641,8 @@ export class ScansService {
     const openIssuesCount = this.readNumber(repositoryResponse, [
       'open_issues_count',
     ]);
-    const openPullRequestsCount = await this.fetchGitlabMergeRequestCount(
-      projectPath,
-    );
+    const openPullRequestsCount =
+      await this.fetchGitlabMergeRequestCount(projectPath);
     const treePaths = await this.fetchGitlabTreePaths(projectPath);
     const textSamples = await this.collectTextSamples(
       target,
@@ -533,10 +677,12 @@ export class ScansService {
       this.readString(repositoryResponse, ['updated_on']) ||
       this.readString(repositoryResponse, ['created_on']);
     const openIssuesCount = await this.fetchBitbucketIssueCount(repoPath);
-    const openPullRequestsCount = await this.fetchBitbucketPullRequestCount(
+    const openPullRequestsCount =
+      await this.fetchBitbucketPullRequestCount(repoPath);
+    const treePaths = await this.fetchBitbucketTreePaths(
       repoPath,
+      defaultBranch,
     );
-    const treePaths = await this.fetchBitbucketTreePaths(repoPath, defaultBranch);
     const textSamples = await this.collectTextSamples(
       target,
       defaultBranch,
@@ -565,7 +711,12 @@ export class ScansService {
     checks.push(
       this.buildPathPresenceCheck(
         'README exists',
-        this.hasAnyPath(paths, ['README.md', 'README', 'readme.md', 'Readme.md']),
+        this.hasAnyPath(paths, [
+          'README.md',
+          'README',
+          'readme.md',
+          'Readme.md',
+        ]),
         'README file found in the repository tree.',
         'README file was not found in the repository tree.',
       ),
@@ -700,7 +851,8 @@ export class ScansService {
         ? {
             label: 'Possible hardcoded secret',
             status: 'fail',
-            details: 'A secret-like value appears to be written directly in code.',
+            details:
+              'A secret-like value appears to be written directly in code.',
             ...this.buildEvidenceItem(
               hardcodedSecretMatch,
               target,
@@ -712,7 +864,8 @@ export class ScansService {
         : {
             label: 'Possible hardcoded secret',
             status: 'pass',
-            details: 'RepoGuard did not find obvious hardcoded secret assignments in sampled files.',
+            details:
+              'RepoGuard did not find obvious hardcoded secret assignments in sampled files.',
           },
     );
 
@@ -733,7 +886,8 @@ export class ScansService {
         : {
             label: 'Environment file committed',
             status: 'pass',
-            details: 'No committed environment files were found in sampled repository paths.',
+            details:
+              'No committed environment files were found in sampled repository paths.',
           },
     );
 
@@ -746,7 +900,8 @@ export class ScansService {
         ? {
             label: 'SQL query built with string concatenation',
             status: 'fail',
-            details: 'SQL query appears to be built with dynamic string content.',
+            details:
+              'SQL query appears to be built with dynamic string content.',
             ...this.buildEvidenceItem(
               sqlConcatMatch,
               target,
@@ -781,7 +936,8 @@ export class ScansService {
         : {
             label: 'No eval usage detected',
             status: 'pass',
-            details: 'RepoGuard did not find obvious eval usage in sampled files.',
+            details:
+              'RepoGuard did not find obvious eval usage in sampled files.',
           },
     );
 
@@ -849,7 +1005,8 @@ export class ScansService {
       items.push({
         label: 'Permissive CORS configuration',
         status: 'pass',
-        details: 'RepoGuard did not find obvious permissive CORS patterns in sampled files.',
+        details:
+          'RepoGuard did not find obvious permissive CORS patterns in sampled files.',
       });
     }
 
@@ -926,7 +1083,8 @@ export class ScansService {
     const codeContext = sourceContent
       ? this.buildCodeContext(sourceContent, evidence.lineNumber)
       : [];
-    const flaggedLine = codeContext.find((line) => line.isFlaggedLine)?.content || '';
+    const flaggedLine =
+      codeContext.find((line) => line.isFlaggedLine)?.content || '';
     const flaggedLinePointer = this.buildFlaggedLinePointer(
       flaggedLine,
       evidence.codeExcerpt,
@@ -992,7 +1150,10 @@ export class ScansService {
     }
 
     let startLine = Math.max(1, safeFlaggedLine - CODE_CONTEXT_LINES_BEFORE);
-    let endLine = Math.min(lines.length, safeFlaggedLine + CODE_CONTEXT_LINES_AFTER);
+    let endLine = Math.min(
+      lines.length,
+      safeFlaggedLine + CODE_CONTEXT_LINES_AFTER,
+    );
 
     if (startLine === 1 && endLine === lines.length) {
       startLine = safeFlaggedLine;
@@ -1217,7 +1378,10 @@ export class ScansService {
           continue;
         }
 
-        if (!hasStrongSecretPattern && !this.isCredentialLikeValue(assignedValue)) {
+        if (
+          !hasStrongSecretPattern &&
+          !this.isCredentialLikeValue(assignedValue)
+        ) {
           continue;
         }
 
@@ -1313,7 +1477,10 @@ export class ScansService {
         continue;
       }
 
-      const lineNumber = this.findLineNumberByIndex(sourceContent, callStartIndex);
+      const lineNumber = this.findLineNumberByIndex(
+        sourceContent,
+        callStartIndex,
+      );
       const lineText = this.readLineByNumber(sourceContent, lineNumber);
       const maskedLine = this.maskSensitiveLiterals(lineText);
 
@@ -1395,7 +1562,10 @@ export class ScansService {
       return false;
     }
 
-    const lookbackStart = Math.max(0, callStartIndex - MAX_JWT_PAYLOAD_LOOKBACK);
+    const lookbackStart = Math.max(
+      0,
+      callStartIndex - MAX_JWT_PAYLOAD_LOOKBACK,
+    );
     const lookbackSource = sourceContent.slice(lookbackStart, callStartIndex);
     const escapedVariableName = payloadVariableName.replace(
       /[.*+?^${}()|[\]\\]/g,
@@ -1456,7 +1626,7 @@ export class ScansService {
 
       if (
         currentCharacter === '"' ||
-        currentCharacter === '\'' ||
+        currentCharacter === "'" ||
         currentCharacter === '`'
       ) {
         quoteCharacter = currentCharacter;
@@ -1528,7 +1698,7 @@ export class ScansService {
 
       if (
         currentCharacter === '"' ||
-        currentCharacter === '\'' ||
+        currentCharacter === "'" ||
         currentCharacter === '`'
       ) {
         quoteCharacter = currentCharacter;
@@ -1763,7 +1933,9 @@ export class ScansService {
   }
 
   private isInternalIdentifierLikeValue(value: string): boolean {
-    const normalized = String(value || '').trim().toLowerCase();
+    const normalized = String(value || '')
+      .trim()
+      .toLowerCase();
     if (!normalized) {
       return false;
     }
@@ -1824,16 +1996,14 @@ export class ScansService {
         return true;
       }
 
-      return Array.from(paths).some((path) => path.startsWith(`${normalizedCandidate}/`));
+      return Array.from(paths).some((path) =>
+        path.startsWith(`${normalizedCandidate}/`),
+      );
     });
   }
 
   private normalizePath(path: string): string {
-    return path
-      .split('/')
-      .filter(Boolean)
-      .join('/')
-      .replace(/\/+/g, '/');
+    return path.split('/').filter(Boolean).join('/').replace(/\/+/g, '/');
   }
 
   private async fetchGithubTreePaths(
@@ -1905,7 +2075,8 @@ export class ScansService {
         .map((segment) => encodeURIComponent(segment))
         .join('/');
 
-      let nextUrl: string | null = `https://api.bitbucket.org/2.0/repositories/${repoPath}/src/${encodeURIComponent(branch)}/${encodedDirectory ? `${encodedDirectory}/` : ''}?pagelen=100`;
+      let nextUrl: string | null =
+        `https://api.bitbucket.org/2.0/repositories/${repoPath}/src/${encodeURIComponent(branch)}/${encodedDirectory ? `${encodedDirectory}/` : ''}?pagelen=100`;
 
       while (nextUrl) {
         const response = await this.fetchJson(nextUrl, {
@@ -1972,7 +2143,11 @@ export class ScansService {
       return false;
     }
 
-    if (path === 'package.json' || path === 'README.md' || path === '.gitignore') {
+    if (
+      path === 'package.json' ||
+      path === 'README.md' ||
+      path === '.gitignore'
+    ) {
       return true;
     }
 
